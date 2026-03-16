@@ -35,10 +35,12 @@ pub trait ProjectionStore<TState> {
 }
 
 /// Checkpoint for tracking projection progress
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct ProjectionCheckpoint {
     pub projection_name: String,
     pub last_position: u64,
+    pub last_updated: u64,
+    pub total_events_processed: u64,
 }
 
 /// Runs a projection by reading events and applying them to the store
@@ -73,23 +75,25 @@ where
         alloc::format!("Projections/_checkpoints/{}.json", self.projection.projection_name())
     }
 
-    pub async fn get_checkpoint(&self) -> Result<Option<u64>, Error> {
+    pub async fn get_checkpoint(&self) -> Result<Option<ProjectionCheckpoint>, Error> {
         let path = self.checkpoint_path();
         match self.storage.read_file(&path).await {
             Ok(data) => {
                 let (checkpoint, _) = serde_json_core::from_slice::<ProjectionCheckpoint>(&data)
                     .map_err(|_| Error::IoError)?;
-                Ok(Some(checkpoint.last_position))
+                Ok(Some(checkpoint))
             }
             Err(Error::NotFound) => Ok(None),
             Err(e) => Err(e),
         }
     }
 
-    pub async fn save_checkpoint(&self, position: u64) -> Result<(), Error> {
+    pub async fn save_checkpoint(&self, position: u64, total_events: u64) -> Result<(), Error> {
         let checkpoint = ProjectionCheckpoint {
             projection_name: alloc::string::String::from(self.projection.projection_name()),
             last_position: position,
+            last_updated: 0, // In a real implementation we would inject a clock here
+            total_events_processed: total_events,
         };
         
         let _ = self.storage.create_dir_all("Projections/_checkpoints").await;
@@ -102,17 +106,22 @@ where
     /// Process a batch of events starting from the last checkpoint
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {
         let query = self.projection.event_types();
-        let mut last_position = self.get_checkpoint().await?.unwrap_or(0);
+        let mut checkpoint = self.get_checkpoint().await?.unwrap_or_else(|| ProjectionCheckpoint {
+            projection_name: alloc::string::String::from(self.projection.projection_name()),
+            last_position: 0,
+            last_updated: 0,
+            total_events_processed: 0,
+        });
 
         for event in events {
             // Skip events we've already processed
-            if event.position <= last_position && last_position > 0 {
+            if event.position <= checkpoint.last_position && checkpoint.last_position > 0 {
                 continue;
             }
 
             // Check if this event matches our query
             if !query.matches(event) {
-                last_position = event.position;
+                checkpoint.last_position = event.position;
                 continue;
             }
 
@@ -127,15 +136,16 @@ where
                 }
             }
 
-            last_position = event.position;
+            checkpoint.last_position = event.position;
+            checkpoint.total_events_processed += 1;
         }
 
         // Save checkpoint
-        if last_position > 0 {
-            self.save_checkpoint(last_position).await?;
+        if checkpoint.last_position > 0 {
+            self.save_checkpoint(checkpoint.last_position, checkpoint.total_events_processed).await?;
         }
 
-        Ok(last_position)
+        Ok(checkpoint.last_position)
     }
 }
 
@@ -431,6 +441,62 @@ mod tests {
         assert_eq!(total, 6);
     }
 
+    // ProjectionCheckpoint tests (Ported from C#)
+
+    #[test]
+    fn test_checkpoint_constructor_initializes_properties() {
+        let checkpoint = ProjectionCheckpoint::default();
+        assert_eq!(checkpoint.projection_name, "");
+        assert_eq!(checkpoint.last_position, 0);
+        assert_eq!(checkpoint.last_updated, 0);
+        assert_eq!(checkpoint.total_events_processed, 0);
+    }
+
+    #[test]
+    fn test_checkpoint_projection_name_can_be_set() {
+        let mut checkpoint = ProjectionCheckpoint::default();
+        checkpoint.projection_name = "TestProjection".to_string();
+        assert_eq!(checkpoint.projection_name, "TestProjection");
+    }
+
+    #[test]
+    fn test_checkpoint_last_position_can_be_set() {
+        let mut checkpoint = ProjectionCheckpoint::default();
+        checkpoint.last_position = 12345;
+        assert_eq!(checkpoint.last_position, 12345);
+    }
+
+    #[test]
+    fn test_checkpoint_last_updated_can_be_set() {
+        let mut checkpoint = ProjectionCheckpoint::default();
+        let timestamp = 1678886400000; // arbitrary timestamp
+        checkpoint.last_updated = timestamp;
+        assert_eq!(checkpoint.last_updated, timestamp);
+    }
+
+    #[test]
+    fn test_checkpoint_total_events_processed_can_be_set() {
+        let mut checkpoint = ProjectionCheckpoint::default();
+        checkpoint.total_events_processed = 99999;
+        assert_eq!(checkpoint.total_events_processed, 99999);
+    }
+
+    #[test]
+    fn test_checkpoint_can_be_fully_populated() {
+        let timestamp = 1678886400000;
+        let checkpoint = ProjectionCheckpoint {
+            projection_name: "OrderSummary".to_string(),
+            last_position: 5000,
+            last_updated: timestamp,
+            total_events_processed: 5000,
+        };
+
+        assert_eq!(checkpoint.projection_name, "OrderSummary");
+        assert_eq!(checkpoint.last_position, 5000);
+        assert_eq!(checkpoint.last_updated, timestamp);
+        assert_eq!(checkpoint.total_events_processed, 5000);
+    }
+
     // ProjectionRunner tests
 
     #[tokio::test]
@@ -500,8 +566,9 @@ mod tests {
         runner.process_events(&events).await.unwrap();
 
         // Verify checkpoint was saved
-        let checkpoint = runner.get_checkpoint().await.unwrap();
-        assert_eq!(checkpoint, Some(5));
+        let checkpoint = runner.get_checkpoint().await.unwrap().unwrap();
+        assert_eq!(checkpoint.last_position, 5);
+        assert_eq!(checkpoint.total_events_processed, 1);
     }
 
     #[tokio::test]

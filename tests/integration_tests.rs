@@ -132,7 +132,8 @@ async fn test_eventstore_projections_end_to_end() {
     store.append_async(vec![event3], None).await.unwrap();
 
     // Read events again from the checkpoint instead of all
-    let start_pos = runner.get_checkpoint().await.unwrap();
+    let checkpoint = runner.get_checkpoint().await.unwrap();
+    let start_pos = checkpoint.map(|c| c.last_position);
     let new_events = store.read_async(Query::all(), start_pos, None).await.unwrap();
 
     // 5. Run projection again (should resume from checkpoint internally skipping early ones)
