@@ -1,0 +1,15 @@
+[package]
+name = "marmosa"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
+serde-json-core = "0.6"
+
+[features]
+default = []
+std = ["serde/std"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
