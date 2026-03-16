@@ -82,10 +82,181 @@ pub struct AppendCondition {
     pub after_sequence_position: Option<u64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReadOption(pub u32);
+
+impl ReadOption {
+    pub const NONE: ReadOption = ReadOption(0);
+    pub const DESCENDING: ReadOption = ReadOption(1);
+
+    pub fn has_flag(&self, flag: ReadOption) -> bool {
+        if flag.0 == 0 {
+            true // In C#, any enum value HasFlag(0) is true
+        } else {
+            (self.0 & flag.0) == flag.0
+        }
+    }
+}
+
+impl core::fmt::Display for ReadOption {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self.0 {
+            0 => write!(f, "None"),
+            1 => write!(f, "Descending"),
+            _ => write!(f, "{}", self.0),
+        }
+    }
+}
+
+impl core::str::FromStr for ReadOption {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "None" => Ok(ReadOption::NONE),
+            "Descending" => Ok(ReadOption::DESCENDING),
+            _ => Err(()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json_core::from_slice;
+
+    #[test]
+    fn read_option_none_has_value_zero() {
+        assert_eq!(ReadOption::NONE.0, 0);
+    }
+
+    #[test]
+    fn read_option_descending_has_value_one() {
+        assert_eq!(ReadOption::DESCENDING.0, 1);
+    }
+
+    #[test]
+    fn read_option_none_is_default_value() {
+        let default_value = ReadOption::default();
+        assert_eq!(ReadOption::NONE, default_value);
+    }
+
+    #[test]
+    fn read_option_can_check_for_none() {
+        let option = ReadOption::NONE;
+        assert!(option == ReadOption::NONE);
+        assert!(!option.has_flag(ReadOption::DESCENDING));
+    }
+
+    #[test]
+    fn read_option_can_check_for_descending() {
+        let option = ReadOption::DESCENDING;
+        assert!(option.has_flag(ReadOption::DESCENDING));
+        assert!(option != ReadOption::NONE);
+    }
+
+    #[test]
+    fn read_option_has_flag_works_with_none() {
+        let option = ReadOption::NONE;
+        assert!(option.has_flag(ReadOption::NONE));
+    }
+
+    #[test]
+    fn read_option_default_parameter_is_none() {
+        fn test_method(option: Option<ReadOption>) {
+            let option = option.unwrap_or(ReadOption::NONE);
+            assert_eq!(ReadOption::NONE, option);
+        }
+        test_method(None);
+    }
+
+    #[test]
+    fn read_option_can_be_passed_as_parameter() {
+        fn test_method(option: ReadOption) {
+            assert_eq!(ReadOption::DESCENDING, option);
+        }
+        test_method(ReadOption::DESCENDING);
+    }
+
+    #[test]
+    fn read_option_can_be_used_in_if_statement() {
+        let option = ReadOption::DESCENDING;
+        let mut was_descending = false;
+
+        if option.has_flag(ReadOption::DESCENDING) {
+            was_descending = true;
+        }
+
+        assert!(was_descending);
+    }
+
+    #[test]
+    fn read_option_can_be_used_in_match_statement() {
+        let option = ReadOption::DESCENDING;
+        let mut result = "";
+
+        match option {
+            ReadOption::NONE => result = "ascending",
+            ReadOption::DESCENDING => result = "descending",
+            _ => {}
+        }
+
+        assert_eq!("descending", result);
+    }
+
+    #[test]
+    fn read_option_supports_value_comparison() {
+        let option1 = ReadOption::NONE;
+        let option2 = ReadOption::NONE;
+        let option3 = ReadOption::DESCENDING;
+
+        assert_eq!(option1, option2);
+        assert_ne!(option1, option3);
+    }
+
+    #[test]
+    fn read_option_can_be_converted_to_int() {
+        let none_value = ReadOption::NONE.0;
+        let descending_value = ReadOption::DESCENDING.0;
+
+        assert_eq!(0, none_value);
+        assert_eq!(1, descending_value);
+    }
+
+    #[test]
+    fn read_option_can_be_converted_from_int() {
+        let none = ReadOption(0);
+        let descending = ReadOption(1);
+
+        assert_eq!(ReadOption::NONE, none);
+        assert_eq!(ReadOption::DESCENDING, descending);
+    }
+
+    #[test]
+    fn read_option_has_flag_works_correctly() {
+        assert!(!ReadOption::NONE.has_flag(ReadOption::DESCENDING));
+        assert!(ReadOption::DESCENDING.has_flag(ReadOption::DESCENDING));
+    }
+
+    #[test]
+    fn read_option_to_string_returns_name() {
+        use alloc::string::ToString;
+        let none_string = ReadOption::NONE.to_string();
+        let descending_string = ReadOption::DESCENDING.to_string();
+
+        assert_eq!("None", none_string);
+        assert_eq!("Descending", descending_string);
+    }
+
+    #[test]
+    fn read_option_can_parse_from_string() {
+        use core::str::FromStr;
+        let none = ReadOption::from_str("None").unwrap();
+        let descending = ReadOption::from_str("Descending").unwrap();
+
+        assert_eq!(ReadOption::NONE, none);
+        assert_eq!(ReadOption::DESCENDING, descending);
+    }
 
     #[test]
     fn test_event_data_deserialization_no_alloc() {
