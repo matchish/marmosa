@@ -115,41 +115,10 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{DomainEvent, EventRecord, Tag};
     use crate::event_store::*;
     use crate::ports::tests::InMemoryStorage;
 
-    fn create_test_event(
-        position: u64,
-        event_type: &str,
-        data: &str,
-    ) -> crate::domain::EventRecord {
-        crate::domain::EventRecord {
-            position,
-            event_id: alloc::string::String::from("id"),
-            event: crate::domain::DomainEvent {
-                event_type: alloc::string::String::from(event_type),
-                data: alloc::string::String::from(data),
-                tags: alloc::vec::Vec::new(),
-            },
-            metadata: None,
-            timestamp: 0,
-        }
-    }
 
-    fn create_test_event_record(position: u64, event_type: &str, tags: Vec<Tag>) -> EventRecord {
-        EventRecord {
-            position,
-            event_id: alloc::format!("evt-{}", position),
-            event: DomainEvent {
-                event_type: event_type.to_string(),
-                data: "{}".to_string(),
-                tags,
-            },
-            metadata: None,
-            timestamp: 123456789,
-        }
-    }
 
     #[tokio::test]
     async fn storage_initializer_get_paths() {

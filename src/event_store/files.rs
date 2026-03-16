@@ -96,7 +96,6 @@ impl<S: crate::ports::StorageBackend> EventFileManager<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{DomainEvent, EventRecord, Tag};
     use crate::event_store::*;
     use crate::ports::tests::InMemoryStorage;
 
@@ -118,19 +117,6 @@ mod tests {
         }
     }
 
-    fn create_test_event_record(position: u64, event_type: &str, tags: Vec<Tag>) -> EventRecord {
-        EventRecord {
-            position,
-            event_id: alloc::format!("evt-{}", position),
-            event: DomainEvent {
-                event_type: event_type.to_string(),
-                data: "{}".to_string(),
-                tags,
-            },
-            metadata: None,
-            timestamp: 123456789,
-        }
-    }
 
     #[tokio::test]
     async fn event_file_manager_write_event_creates_file() {

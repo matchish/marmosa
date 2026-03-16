@@ -255,23 +255,6 @@ mod tests {
     use crate::event_store::*;
     use crate::ports::tests::InMemoryStorage;
 
-    fn create_test_event(
-        position: u64,
-        event_type: &str,
-        data: &str,
-    ) -> crate::domain::EventRecord {
-        crate::domain::EventRecord {
-            position,
-            event_id: alloc::string::String::from("id"),
-            event: crate::domain::DomainEvent {
-                event_type: alloc::string::String::from(event_type),
-                data: alloc::string::String::from(data),
-                tags: alloc::vec::Vec::new(),
-            },
-            metadata: None,
-            timestamp: 0,
-        }
-    }
 
     fn create_test_event_record(position: u64, event_type: &str, tags: Vec<Tag>) -> EventRecord {
         EventRecord {
