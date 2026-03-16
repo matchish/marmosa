@@ -118,8 +118,6 @@ mod tests {
     use crate::event_store::*;
     use crate::ports::tests::InMemoryStorage;
 
-
-
     #[tokio::test]
     async fn storage_initializer_get_paths() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());

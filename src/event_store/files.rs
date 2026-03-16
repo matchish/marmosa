@@ -117,7 +117,6 @@ mod tests {
         }
     }
 
-
     #[tokio::test]
     async fn event_file_manager_write_event_creates_file() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());

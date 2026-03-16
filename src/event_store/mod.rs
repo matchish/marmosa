@@ -1,13 +1,14 @@
-pub mod options_validation_tests;
 pub mod files;
 pub mod indices;
 pub mod initializer;
 pub mod ledger;
+pub mod options;
 
 pub use files::*;
 pub use indices::*;
 pub use initializer::*;
 pub use ledger::*;
+pub use options::*;
 
 use alloc::format;
 use alloc::vec::Vec;
@@ -152,8 +153,6 @@ mod tests {
     use super::*;
     use crate::domain::DomainEvent;
     use crate::ports::tests::{FakeClock, InMemoryStorage};
-
-
 
     #[tokio::test]
     async fn test_append_single_event_to_new_stream() {
@@ -307,17 +306,29 @@ mod tests {
         let events = vec![
             EventData {
                 event_id: "evt-1".to_string(),
-                event: DomainEvent { event_type: "TestEvent".to_string(), data: "1".to_string(), tags: vec![] },
+                event: DomainEvent {
+                    event_type: "TestEvent".to_string(),
+                    data: "1".to_string(),
+                    tags: vec![],
+                },
                 metadata: None,
             },
             EventData {
                 event_id: "evt-2".to_string(),
-                event: DomainEvent { event_type: "TestEvent".to_string(), data: "2".to_string(), tags: vec![] },
+                event: DomainEvent {
+                    event_type: "TestEvent".to_string(),
+                    data: "2".to_string(),
+                    tags: vec![],
+                },
                 metadata: None,
             },
             EventData {
                 event_id: "evt-3".to_string(),
-                event: DomainEvent { event_type: "TestEvent".to_string(), data: "3".to_string(), tags: vec![] },
+                event: DomainEvent {
+                    event_type: "TestEvent".to_string(),
+                    data: "3".to_string(),
+                    tags: vec![],
+                },
                 metadata: None,
             },
         ];
@@ -343,12 +354,20 @@ mod tests {
         let events = vec![
             EventData {
                 event_id: "evt-1".to_string(),
-                event: DomainEvent { event_type: "Type1".to_string(), data: "1".to_string(), tags: vec![] },
+                event: DomainEvent {
+                    event_type: "Type1".to_string(),
+                    data: "1".to_string(),
+                    tags: vec![],
+                },
                 metadata: None,
             },
             EventData {
                 event_id: "evt-2".to_string(),
-                event: DomainEvent { event_type: "Type2".to_string(), data: "2".to_string(), tags: vec![] },
+                event: DomainEvent {
+                    event_type: "Type2".to_string(),
+                    data: "2".to_string(),
+                    tags: vec![],
+                },
                 metadata: None,
             },
         ];
@@ -360,7 +379,7 @@ mod tests {
         assert!(files.contains(&"Events/0000000000.json".to_string()));
     }
 
-        #[tokio::test]
+    #[tokio::test]
     async fn test_append_multiple_sequential_appends_maintains_continuous_sequence() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
@@ -368,14 +387,22 @@ mod tests {
 
         let batch1 = vec![EventData {
             event_id: "evt-1".to_string(),
-            event: DomainEvent { event_type: "TestEvent".to_string(), data: "1".to_string(), tags: vec![] },
+            event: DomainEvent {
+                event_type: "TestEvent".to_string(),
+                data: "1".to_string(),
+                tags: vec![],
+            },
             metadata: None,
         }];
         store.append_async(batch1, None).await.unwrap();
 
         let batch2 = vec![EventData {
             event_id: "evt-2".to_string(),
-            event: DomainEvent { event_type: "TestEvent".to_string(), data: "2".to_string(), tags: vec![] },
+            event: DomainEvent {
+                event_type: "TestEvent".to_string(),
+                data: "2".to_string(),
+                tags: vec![],
+            },
             metadata: None,
         }];
         store.append_async(batch2, None).await.unwrap();
