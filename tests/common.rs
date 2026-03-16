@@ -74,11 +74,15 @@ impl StorageBackend for InMemoryStorage {
     }
 
     async fn acquire_stream_lock(&self, stream_id: &str) -> Result<(), Error> {
-        let mut locks = self.locks.lock().unwrap();
-        if !locks.insert(stream_id.to_string()) {
-            return Err(Error::AlreadyExists);
+        loop {
+            {
+                let mut locks = self.locks.lock().unwrap();
+                if locks.insert(stream_id.to_string()) {
+                    return Ok(());
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
-        Ok(())
     }
 
     async fn release_stream_lock(&self, stream_id: &str) -> Result<(), Error> {

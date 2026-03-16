@@ -70,6 +70,16 @@
 			"label": "commit",
 			"type": "shell",
 			"command": "rm tests_opossum/Opossum.UnitTests/Extensions/EventStoreExtensionsTests.cs && git add . && git commit -m \"feat: Port EventStoreExtensions to Rust with unit tests\""
+		},
+		{
+			"label": "cleanup",
+			"type": "shell",
+			"command": "git rm -f add_tests.py errors.txt errs2.txt fix2.py fix_extensions.py update_extensions.py && git commit --amend --no-edit"
+		},
+		{
+			"label": "cleanup2",
+			"type": "shell",
+			"command": "rm -f *.py *.txt && git add . && git commit --amend --no-edit"
 		}
 	]
 }
