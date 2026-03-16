@@ -612,4 +612,163 @@ mod tests {
         let state = runner.store.get("counter-1").await.unwrap();
         assert_eq!(state.unwrap().count, 2);
     }
+
+    #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+    struct OrderSummary {
+        order_id: String,
+        customer_name: String,
+        total_amount: f64,
+        item_count: i32,
+    }
+
+    struct TestOrderProjection;
+
+    impl ProjectionDefinition for TestOrderProjection {
+        type State = OrderSummary;
+
+        fn projection_name(&self) -> &str {
+            "OrderSummary"
+        }
+
+        fn event_types(&self) -> Query {
+            Query {
+                items: vec![crate::domain::QueryItem {
+                    event_types: vec![
+                        "OrderCreated".to_string(),
+                        "ItemAdded".to_string(),
+                        "OrderCancelled".to_string(),
+                    ],
+                    tags: vec![],
+                }],
+            }
+        }
+
+        fn key_selector(&self, event: &EventRecord) -> Option<String> {
+            event.event.tags.iter()
+                .find(|t| t.key == "orderId")
+                .map(|t| t.value.clone())
+        }
+
+        fn apply(&self, state: Option<Self::State>, event: &EventRecord) -> Option<Self::State> {
+            match event.event.event_type.as_str() {
+                "OrderCreated" => {
+                    Some(OrderSummary {
+                        order_id: self.key_selector(event).unwrap_or_default(),
+                        customer_name: event.event.data.clone(),
+                        total_amount: 0.0,
+                        item_count: 0,
+                    })
+                }
+                "ItemAdded" => {
+                    if let Some(mut current) = state {
+                        let price: f64 = event.event.data.parse().unwrap_or(0.0);
+                        current.total_amount += price;
+                        current.item_count += 1;
+                        Some(current)
+                    } else {
+                        None
+                    }
+                }
+                "OrderCancelled" => None,
+                _ => state,
+            }
+        }
+    }
+
+    fn create_order_event(event_type: &str, data: &str, order_id: &str) -> EventRecord {
+        EventRecord {
+            position: 1,
+            event_id: "evt-1".to_string(),
+            event: DomainEvent {
+                event_type: event_type.to_string(),
+                data: data.to_string(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
+            },
+            metadata: None,
+            timestamp: 1000,
+        }
+    }
+
+    #[test]
+    fn test_order_projection_definition_with_basic_events_applies_correctly() {
+        let projection = TestOrderProjection;
+        assert_eq!(projection.projection_name(), "OrderSummary");
+        let query = projection.event_types();
+        assert_eq!(query.items[0].event_types.len(), 3);
+        assert!(query.items[0].event_types.contains(&"OrderCreated".to_string()));
+        assert!(query.items[0].event_types.contains(&"ItemAdded".to_string()));
+        assert!(query.items[0].event_types.contains(&"OrderCancelled".to_string()));
+    }
+
+    #[test]
+    fn test_order_projection_key_selector_with_valid_event_extracts_key() {
+        let projection = TestOrderProjection;
+        let evt = create_order_event("OrderCreated", "Customer A", "order-123");
+        assert_eq!(projection.key_selector(&evt), Some("order-123".to_string()));
+    }
+
+    #[test]
+    fn test_order_projection_apply_with_order_created_creates_new_projection() {
+        let projection = TestOrderProjection;
+        let evt = create_order_event("OrderCreated", "Customer A", "order-123");
+        let result = projection.apply(None, &evt).unwrap();
+        assert_eq!(result.order_id, "order-123");
+        assert_eq!(result.customer_name, "Customer A");
+        assert_eq!(result.total_amount, 0.0);
+        assert_eq!(result.item_count, 0);
+    }
+
+    #[test]
+    fn test_order_projection_apply_with_item_added_updates_projection() {
+        let projection = TestOrderProjection;
+        let current = OrderSummary {
+            order_id: "order-123".to_string(),
+            customer_name: "Customer A".to_string(),
+            total_amount: 100.0,
+            item_count: 1,
+        };
+        let evt = create_order_event("ItemAdded", "50.0", "order-123");
+        let result = projection.apply(Some(current), &evt).unwrap();
+        assert_eq!(result.total_amount, 150.0);
+        assert_eq!(result.item_count, 2);
+    }
+
+    #[test]
+    fn test_order_projection_apply_with_order_cancelled_returns_none() {
+        let projection = TestOrderProjection;
+        let current = OrderSummary {
+            order_id: "order-123".to_string(),
+            customer_name: "Customer A".to_string(),
+            total_amount: 100.0,
+            item_count: 1,
+        };
+        let evt = create_order_event("OrderCancelled", "{}", "order-123");
+        let result = projection.apply(Some(current), &evt);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_order_projection_apply_with_unknown_event_returns_current_state() {
+        let projection = TestOrderProjection;
+        let current = OrderSummary {
+            order_id: "order-123".to_string(),
+            customer_name: "Customer A".to_string(),
+            total_amount: 100.0,
+            item_count: 1,
+        };
+        let evt = create_order_event("UnknownEvent", "{}", "order-123");
+        let result = projection.apply(Some(current.clone()), &evt).unwrap();
+        assert_eq!(result, current);
+    }
+
+    #[test]
+    fn test_order_projection_apply_with_item_added_when_current_is_none_returns_none() {
+        let projection = TestOrderProjection;
+        let evt = create_order_event("ItemAdded", "50.0", "order-123");
+        let result = projection.apply(None, &evt);
+        assert!(result.is_none());
+    }
 }
