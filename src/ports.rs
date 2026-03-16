@@ -123,15 +123,15 @@ pub mod tests {
         }
 
         async fn acquire_stream_lock(&self, stream_id: &str) -> Result<(), Error> {
-            // For a complete test double, we would yield until the lock is free.
-            // For now, we simply simulate immediate acquisition or error out.
-            let mut locks = self.locks.lock().unwrap();
-            if !locks.insert(stream_id.to_string()) {
-                // In a real implementation this would wait, but for our simple tests,
-                // failing if it's already locked is enough to prove the mechanics work.
-                return Err(Error::AlreadyExists);
+            loop {
+                {
+                    let mut locks = self.locks.lock().unwrap();
+                    if locks.insert(stream_id.to_string()) {
+                        return Ok(());
+                    }
+                }
+                tokio::task::yield_now().await;
             }
-            Ok(())
         }
 
         async fn release_stream_lock(&self, stream_id: &str) -> Result<(), Error> {

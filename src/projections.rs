@@ -223,6 +223,170 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
     }
 }
 
+use crate::domain::Tag;
+use alloc::collections::BTreeSet;
+
+pub struct ProjectionTagIndex<S> {
+    storage: S,
+}
+
+impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
+    pub fn new(storage: S) -> Self {
+        Self { storage }
+    }
+    
+    fn get_index_path(&self, root_path: &str, tag: &Tag) -> String {
+        let tag_key = tag.key.to_ascii_lowercase();
+        let tag_value = tag.value.to_ascii_lowercase();
+        alloc::format!("{}/Indices/{}_{}.json", root_path, tag_key, tag_value)
+    }
+
+    fn get_tag_lock_key(&self, root_path: &str, tag: &Tag) -> String {
+        alloc::format!("{}|{}|{}", root_path, tag.key.to_ascii_lowercase(), tag.value.to_ascii_lowercase())
+    }
+
+    pub async fn add_projection(&self, root_path: &str, tag: &Tag, projection_key: &str) -> Result<(), Error> {
+        let indices_dir = alloc::format!("{}/Indices", root_path);
+        let _ = self.storage.create_dir_all(&indices_dir).await;
+        
+        let index_path = self.get_index_path(root_path, tag);
+        let lock_key = self.get_tag_lock_key(root_path, tag);
+        
+        self.storage.acquire_stream_lock(&lock_key).await?;
+        
+        let mut keys = self.read_keys(&index_path).await.unwrap_or_default();
+        if !keys.contains(&alloc::string::String::from(projection_key)) {
+            keys.push(alloc::string::String::from(projection_key));
+            // C# implementation uses temp file + rename, here we'll just write directly. 
+            // In a real implementation this would need atomicity.
+            if let Ok(data) = serde_json_core::to_vec::<_, 4096>(&keys) {
+                let _ = self.storage.write_file(&index_path, &data).await;
+            }
+        }
+        
+        self.storage.release_stream_lock(&lock_key).await?;
+        Ok(())
+    }
+
+    pub async fn remove_projection(&self, root_path: &str, tag: &Tag, projection_key: &str) -> Result<(), Error> {
+        let index_path = self.get_index_path(root_path, tag);
+        let lock_key = self.get_tag_lock_key(root_path, tag);
+        
+        // Return early if file doesn't exist to save locking
+        if let Err(Error::NotFound) = self.storage.read_file(&index_path).await {
+            return Ok(());
+        }
+
+        self.storage.acquire_stream_lock(&lock_key).await?;
+
+        let mut keys = self.read_keys(&index_path).await.unwrap_or_default();
+        let original_len = keys.len();
+        keys.retain(|k| k != projection_key);
+        
+        if keys.len() != original_len {
+            if keys.is_empty() {
+                let _ = self.storage.delete_file(&index_path).await;
+            } else if let Ok(data) = serde_json_core::to_vec::<_, 4096>(&keys) {
+                let _ = self.storage.write_file(&index_path, &data).await;
+            }
+        }
+
+        self.storage.release_stream_lock(&lock_key).await?;
+        Ok(())
+    }
+
+    pub async fn get_projection_keys_by_tag(&self, root_path: &str, tag: &Tag) -> Result<Vec<String>, Error> {
+        let index_path = self.get_index_path(root_path, tag);
+        Ok(self.read_keys(&index_path).await.unwrap_or_default())
+    }
+
+    pub async fn get_projection_keys_by_tags(&self, root_path: &str, tags: &[Tag]) -> Result<Vec<String>, Error> {
+        if tags.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        let mut key_sets = Vec::new();
+        for tag in tags {
+            let keys = self.get_projection_keys_by_tag(root_path, tag).await?;
+            if keys.is_empty() {
+                return Ok(Vec::new());
+            }
+            key_sets.push(keys);
+        }
+
+        // Sort starting with smallest set for efficiency
+        key_sets.sort_by_key(|s| s.len());
+
+        let mut result_set: BTreeSet<_> = key_sets[0].iter().cloned().collect();
+        for set in key_sets.iter().skip(1) {
+            let next_set: BTreeSet<_> = set.iter().cloned().collect();
+            result_set.retain(|k| next_set.contains(k));
+
+            if result_set.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
+
+        Ok(result_set.into_iter().collect())
+    }
+
+    pub async fn update_projection_tags(
+        &self, 
+        root_path: &str, 
+        projection_key: &str, 
+        old_tags: &[Tag], 
+        new_tags: &[Tag]
+    ) -> Result<(), Error> {
+        // Find tags to remove (in old but not in new)
+        for old_tag in old_tags {
+            let matches_new = new_tags.iter().any(|t| 
+                t.key.eq_ignore_ascii_case(&old_tag.key) && 
+                t.value.eq_ignore_ascii_case(&old_tag.value)
+            );
+            if !matches_new {
+                self.remove_projection(root_path, old_tag, projection_key).await?;
+            }
+        }
+        
+        // Find tags to add (in new but not in old)
+        for new_tag in new_tags {
+            let matches_old = old_tags.iter().any(|t| 
+                t.key.eq_ignore_ascii_case(&new_tag.key) && 
+                t.value.eq_ignore_ascii_case(&new_tag.value)
+            );
+            if !matches_old {
+                self.add_projection(root_path, new_tag, projection_key).await?;
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub async fn delete_all_indices(&self, root_path: &str) -> Result<(), Error> {
+        let indices_dir = alloc::format!("{}/Indices", root_path);
+        if let Ok(files) = self.storage.read_dir(&indices_dir).await {
+            for file in files {
+                let _ = self.storage.delete_file(&file).await;
+            }
+        }
+        Ok(())
+    }
+
+    async fn read_keys(&self, path: &str) -> Result<Vec<String>, Error> {
+        match self.storage.read_file(path).await {
+            Ok(data) => {
+                // If parsing fails, C# treats it as empty index.
+                match serde_json_core::from_slice::<Vec<String>>(&data) {
+                    Ok((keys, _)) => Ok(keys),
+                    Err(_) => Ok(Vec::new()),
+                }
+            }
+            Err(Error::NotFound) => Ok(Vec::new()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,6 +394,232 @@ mod tests {
     use alloc::vec;
     use crate::domain::{DomainEvent, Tag};
     use crate::ports::tests::InMemoryStorage;
+
+    #[tokio::test]
+    async fn projection_tag_index_add_projection_creates_index_file() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let projection_key = "proj-1";
+
+        index.add_projection("/temp", &tag, projection_key).await.unwrap();
+
+        let index_file = "/temp/Indices/status_active.json";
+        assert!(storage.read_file(index_file).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_add_projection_adds_key_to_existing_index() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+        index.add_projection("/temp", &tag, "proj-2").await.unwrap();
+        index.add_projection("/temp", &tag, "proj-3").await.unwrap();
+
+        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        assert_eq!(keys.len(), 3);
+        assert!(keys.contains(&"proj-1".to_string()));
+        assert!(keys.contains(&"proj-2".to_string()));
+        assert!(keys.contains(&"proj-3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_add_projection_prevents_duplicates() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+
+        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0], "proj-1");
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_remove_projection_removes_key_from_index() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+        index.add_projection("/temp", &tag, "proj-2").await.unwrap();
+
+        index.remove_projection("/temp", &tag, "proj-1").await.unwrap();
+
+        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        assert_eq!(keys.len(), 1);
+        assert_eq!(keys[0], "proj-2");
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_remove_projection_deletes_index_file_when_empty() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+        index.remove_projection("/temp", &tag, "proj-1").await.unwrap();
+
+        let index_file = "/temp/Indices/status_active.json";
+        assert!(storage.read_file(index_file).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_get_projection_keys_by_tag_returns_empty_for_non_existent() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Inactive".to_string() };
+
+        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        assert!(keys.is_empty());
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_get_projection_keys_by_tags_returns_intersection() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag1 = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag2 = Tag { key: "Tier".to_string(), value: "Premium".to_string() };
+
+        index.add_projection("/temp", &tag1, "proj-1").await.unwrap();
+        index.add_projection("/temp", &tag1, "proj-2").await.unwrap();
+        index.add_projection("/temp", &tag1, "proj-3").await.unwrap();
+
+        index.add_projection("/temp", &tag2, "proj-1").await.unwrap();
+        index.add_projection("/temp", &tag2, "proj-3").await.unwrap();
+
+        let tags = alloc::vec![tag1, tag2];
+        let keys = index.get_projection_keys_by_tags("/temp", &tags).await.unwrap();
+        
+        assert_eq!(keys.len(), 2);
+        assert!(keys.contains(&"proj-1".to_string()));
+        assert!(keys.contains(&"proj-3".to_string()));
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_get_projection_keys_by_tags_returns_empty_if_any_tag_has_no_matches() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag1 = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag2 = Tag { key: "NonExistent".to_string(), value: "Value".to_string() };
+
+        index.add_projection("/temp", &tag1, "proj-1").await.unwrap();
+
+        let tags = alloc::vec![tag1, tag2];
+        let keys = index.get_projection_keys_by_tags("/temp", &tags).await.unwrap();
+        
+        assert!(keys.is_empty());
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_update_projection_tags_removes_old_and_adds_new() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let proj_key = "proj-1";
+        
+        let old_tags = alloc::vec![
+            Tag { key: "Status".to_string(), value: "Pending".to_string() },
+            Tag { key: "Tier".to_string(), value: "Basic".to_string() }
+        ];
+        
+        let new_tags = alloc::vec![
+            Tag { key: "Status".to_string(), value: "Active".to_string() },
+            Tag { key: "Tier".to_string(), value: "Premium".to_string() }
+        ];
+
+        for tag in &old_tags {
+            index.add_projection("/temp", tag, proj_key).await.unwrap();
+        }
+
+        index.update_projection_tags("/temp", proj_key, &old_tags, &new_tags).await.unwrap();
+
+        let pending_keys = index.get_projection_keys_by_tag("/temp", &old_tags[0]).await.unwrap();
+        assert!(pending_keys.is_empty());
+
+        let basic_keys = index.get_projection_keys_by_tag("/temp", &old_tags[1]).await.unwrap();
+        assert!(basic_keys.is_empty());
+
+        let active_keys = index.get_projection_keys_by_tag("/temp", &new_tags[0]).await.unwrap();
+        assert!(active_keys.contains(&proj_key.to_string()));
+
+        let premium_keys = index.get_projection_keys_by_tag("/temp", &new_tags[1]).await.unwrap();
+        assert!(premium_keys.contains(&proj_key.to_string()));
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_update_projection_tags_only_updates_changed_tags() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let proj_key = "proj-1";
+        
+        let old_tags = alloc::vec![
+            Tag { key: "Status".to_string(), value: "Active".to_string() },
+            Tag { key: "Tier".to_string(), value: "Basic".to_string() }
+        ];
+        
+        let new_tags = alloc::vec![
+            Tag { key: "Status".to_string(), value: "Active".to_string() }, // Unchanged
+            Tag { key: "Tier".to_string(), value: "Premium".to_string() }  // Changed
+        ];
+
+        for tag in &old_tags {
+            index.add_projection("/temp", tag, proj_key).await.unwrap();
+        }
+
+        index.update_projection_tags("/temp", proj_key, &old_tags, &new_tags).await.unwrap();
+
+        let active_keys = index.get_projection_keys_by_tag("/temp", &new_tags[0]).await.unwrap();
+        assert!(active_keys.contains(&proj_key.to_string()));
+
+        let basic_keys = index.get_projection_keys_by_tag("/temp", &old_tags[1]).await.unwrap();
+        assert!(basic_keys.is_empty());
+
+        let premium_keys = index.get_projection_keys_by_tag("/temp", &new_tags[1]).await.unwrap();
+        assert!(premium_keys.contains(&proj_key.to_string()));
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_delete_all_indices_removes_indices() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionTagIndex::new(storage.clone());
+        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+
+        index.add_projection("/temp", &tag, "proj-1").await.unwrap();
+        
+        index.delete_all_indices("/temp").await.unwrap();
+        
+        let index_file = "/temp/Indices/status_active.json";
+        assert!(storage.read_file(index_file).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn projection_tag_index_concurrent_addition_same_tag_no_lost_updates() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = alloc::sync::Arc::new(ProjectionTagIndex::new(storage.clone()));
+        let tag = alloc::sync::Arc::new(Tag { key: "Status".to_string(), value: "Active".to_string() });
+        
+        let mut handles = alloc::vec::Vec::new();
+        
+        for i in 0..50 {
+            let idx = index.clone();
+            let t = tag.clone();
+            let key = alloc::format!("proj-{}", i);
+            handles.push(tokio::spawn(async move {
+                idx.add_projection("/temp_p", &t, &key).await.unwrap();
+            }));
+        }
+        
+        for handle in handles {
+            handle.await.unwrap();
+        }
+        
+        let keys = index.get_projection_keys_by_tag("/temp_p", &tag).await.unwrap();
+        assert_eq!(keys.len(), 50);
+    }
 
     // A simple counter projection for testing
     #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
