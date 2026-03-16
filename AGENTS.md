@@ -9,4 +9,4 @@ Do not commit .py files and other helper files
 - **Integration Tests:** Place tests that only use the public API in the `tests/` directory at the root of the project.
 
 ### Refactoring Guidelines
-- **File Splitting:** Do not proactively refactor or split code into separate files just because a file seems "too big". Keep code in its original destination or existing structures unless explicitly asked by the user to split it out. Maintain the 1:1 conceptual mapping during the porting process rather than aggressively modularizing.
+- **File Splitting:** Proactively prevent files from becoming too big. Break down large files into smaller, well-organized modules and separate files. Do not keep all ported code in a single massive file just because it was that way in the original C# codebase (or for any other reason). Use Rust's module system properly to keep individual source files focused and manageable in size.
