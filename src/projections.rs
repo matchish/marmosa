@@ -387,8 +387,217 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     }
 }
 
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProjectionMetadata {
+    pub created_at: u64,
+    pub last_updated_at: u64,
+    pub version: u64,
+    pub size_in_bytes: u64,
+}
+
+pub struct ProjectionMetadataIndex<S> {
+    storage: S,
+}
+
+impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
+    pub fn new(storage: S) -> Self {
+        Self { storage }
+    }
+
+    fn get_index_path(&self, root_path: &str) -> alloc::string::String {
+        alloc::format!("{}/Metadata/index.json", root_path)
+    }
+
+    fn get_lock_key(&self, root_path: &str) -> alloc::string::String {
+        alloc::format!("metadata_lock:{}", root_path)
+    }
+
+    pub async fn save(&self, root_path: &str, key: &str, metadata: ProjectionMetadata) -> Result<(), crate::ports::Error> {
+        let _ = self.storage.create_dir_all(&alloc::format!("{}/Metadata", root_path)).await;
+        
+        let index_path = self.get_index_path(root_path);
+        let lock_key = self.get_lock_key(root_path);
+        
+        self.storage.acquire_stream_lock(&lock_key).await?;
+        
+        let mut index = self.read_index(&index_path).await.unwrap_or_default();
+        index.insert(alloc::string::String::from(key), metadata);
+        
+        if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&index) {
+            let _ = self.storage.write_file(&index_path, &data).await;
+        }
+        
+        self.storage.release_stream_lock(&lock_key).await?;
+        Ok(())
+    }
+
+    pub async fn get(&self, root_path: &str, key: &str) -> Result<Option<ProjectionMetadata>, crate::ports::Error> {
+        let index_path = self.get_index_path(root_path);
+        let index = self.read_index(&index_path).await.unwrap_or_default();
+        Ok(index.get(key).cloned())
+    }
+
+    pub async fn get_all(&self, root_path: &str) -> Result<alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>, crate::ports::Error> {
+        let index_path = self.get_index_path(root_path);
+        Ok(self.read_index(&index_path).await.unwrap_or_default())
+    }
+
+    pub async fn get_updated_since(&self, root_path: &str, cutoff_time: u64) -> Result<alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)>, crate::ports::Error> {
+        let index_path = self.get_index_path(root_path);
+        let index = self.read_index(&index_path).await.unwrap_or_default();
+        
+        let mut result = alloc::vec::Vec::new();
+        for (k, v) in index {
+            if v.last_updated_at >= cutoff_time {
+                result.push((k, v));
+            }
+        }
+        Ok(result)
+    }
+
+    pub async fn delete(&self, root_path: &str, key: &str) -> Result<(), crate::ports::Error> {
+        let index_path = self.get_index_path(root_path);
+        let lock_key = self.get_lock_key(root_path);
+        
+        if let Err(crate::ports::Error::NotFound) = self.storage.read_file(&index_path).await {
+            return Ok(());
+        }
+
+        self.storage.acquire_stream_lock(&lock_key).await?;
+        
+        let mut index = self.read_index(&index_path).await.unwrap_or_default();
+        if index.remove(key).is_some() {
+            if index.is_empty() {
+                let _ = self.storage.delete_file(&index_path).await;
+            } else if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&index) {
+                let _ = self.storage.write_file(&index_path, &data).await;
+            }
+        }
+        
+        self.storage.release_stream_lock(&lock_key).await?;
+        Ok(())
+    }
+
+    pub async fn clear(&self, root_path: &str) -> Result<(), crate::ports::Error> {
+        let index_path = self.get_index_path(root_path);
+        let lock_key = self.get_lock_key(root_path);
+        
+        self.storage.acquire_stream_lock(&lock_key).await?;
+        let _ = self.storage.delete_file(&index_path).await;
+        self.storage.release_stream_lock(&lock_key).await?;
+        Ok(())
+    }
+
+    async fn read_index(&self, path: &str) -> Result<alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>, crate::ports::Error> {
+        match self.storage.read_file(path).await {
+            Ok(data) => {
+                match serde_json_core::from_slice::<alloc::collections::BTreeMap<&str, ProjectionMetadata>>(&data) {
+                    Ok((index, _)) => {
+                        let mut string_index = alloc::collections::BTreeMap::new();
+                        for (k, v) in index {
+                            string_index.insert(alloc::string::String::from(k), v);
+                        }
+                        Ok(string_index)
+                    }
+                    Err(_) => Ok(alloc::collections::BTreeMap::new()),
+                }
+            }
+            Err(crate::ports::Error::NotFound) => Ok(alloc::collections::BTreeMap::new()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_projection_metadata_can_be_created() {
+        let metadata = ProjectionMetadata {
+            created_at: 1000,
+            last_updated_at: 1000,
+            version: 1,
+            size_in_bytes: 256,
+        };
+        assert_eq!(metadata.created_at, 1000);
+        assert_eq!(metadata.last_updated_at, 1000);
+        assert_eq!(metadata.version, 1);
+        assert_eq!(metadata.size_in_bytes, 256);
+    }
+    
+    #[test]
+    fn test_projection_metadata_supports_with_syntax() {
+        let original = ProjectionMetadata {
+            created_at: 1000,
+            last_updated_at: 2000,
+            version: 5,
+            size_in_bytes: 512,
+        };
+        let updated = ProjectionMetadata {
+            last_updated_at: 3000,
+            version: 6,
+            size_in_bytes: 600,
+            ..original
+        };
+        assert_eq!(updated.created_at, 1000);
+        assert_ne!(original.last_updated_at, updated.last_updated_at);
+        assert_eq!(updated.version, 6);
+        assert_eq!(updated.size_in_bytes, 600);
+    }
+
+    #[tokio::test]
+    async fn test_projection_metadata_index_save() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionMetadataIndex::new(storage.clone());
+        let m = ProjectionMetadata { created_at: 1000, last_updated_at: 1000, version: 1, size_in_bytes: 256 };
+        index.save("/temp", "k1", m.clone()).await.unwrap();
+        assert!(storage.read_file("/temp/Metadata/index.json").await.is_ok());
+        let fetched = index.get("/temp", "k1").await.unwrap().unwrap();
+        assert_eq!(fetched.version, 1);
+    }
+
+    #[tokio::test]
+    async fn test_projection_metadata_index_get_all() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionMetadataIndex::new(storage.clone());
+        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index.save("/temp", "k2", ProjectionMetadata { created_at: 2, last_updated_at: 2, version: 2, size_in_bytes: 2 }).await.unwrap();
+        let all = index.get_all("/temp").await.unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_projection_metadata_index_get_updated_since() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionMetadataIndex::new(storage.clone());
+        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index.save("/temp", "k2", ProjectionMetadata { created_at: 2, last_updated_at: 10, version: 2, size_in_bytes: 2 }).await.unwrap();
+        let recent = index.get_updated_since("/temp", 5).await.unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].0, "k2");
+    }
+
+    #[tokio::test]
+    async fn test_projection_metadata_index_delete() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionMetadataIndex::new(storage.clone());
+        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index.delete("/temp", "k1").await.unwrap();
+        let fetched = index.get("/temp", "k1").await.unwrap();
+        assert!(fetched.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_projection_metadata_index_clear() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let index = ProjectionMetadataIndex::new(storage.clone());
+        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index.clear("/temp").await.unwrap();
+        let all = index.get_all("/temp").await.unwrap();
+        assert!(all.is_empty());
+    }
+
     use super::*;
     use alloc::string::ToString;
     use alloc::vec;
