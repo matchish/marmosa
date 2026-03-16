@@ -237,7 +237,11 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
         let path = self.get_file_path(key);
-        self.storage.delete_file(&path).await
+        match self.storage.delete_file(&path).await {
+            Ok(_) => Ok(()),
+            Err(Error::NotFound) => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 }
 
