@@ -368,4 +368,134 @@ mod tests {
         assert!(!query.matches(&make_event("StudentEnrolled", &[("courseId", "c2")])));
         assert!(!query.matches(&make_event("StudentRegistered", &[("studentId", "s2")])));
     }
+
+    #[test]
+    fn serialize_with_valid_event_returns_json_string() {
+        let evt = make_event("TestEvent", &[]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let json_str = core::str::from_utf8(&json_bytes).unwrap();
+        
+        assert!(!json_str.is_empty());
+        assert!(json_str.contains("position"));
+        assert!(json_str.contains("event"));
+    }
+
+    #[test]
+    fn serialize_includes_position() {
+        let mut evt = make_event("TestEvent", &[]);
+        evt.position = 42;
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let json_str = core::str::from_utf8(&json_bytes).unwrap();
+        
+        assert!(json_str.contains("\"position\":"));
+        assert!(json_str.contains("42"));
+    }
+
+    #[test]
+    fn serialize_includes_event_type() {
+        let evt = make_event("StudentEnrolled", &[]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let json_str = core::str::from_utf8(&json_bytes).unwrap();
+        
+        assert!(json_str.contains("StudentEnrolled"));
+    }
+
+    #[test]
+    fn serialize_includes_tags() {
+        let evt = make_event("TestEvent", &[("courseId", "123"), ("studentId", "456")]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let json_str = core::str::from_utf8(&json_bytes).unwrap();
+        
+        assert!(json_str.contains("courseId"));
+        assert!(json_str.contains("123"));
+        assert!(json_str.contains("studentId"));
+        assert!(json_str.contains("456"));
+    }
+
+    #[test]
+    fn serialize_includes_metadata() {
+        let mut evt = make_event("TestEvent", &[]);
+        evt.metadata = Some(String::from("correlationId:123"));
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let json_str = core::str::from_utf8(&json_bytes).unwrap();
+        
+        assert!(json_str.contains("metadata"));
+        assert!(json_str.contains("correlationId:123"));
+    }
+
+    #[test]
+    fn deserialize_with_valid_json_returns_record() {
+        let evt = make_event("TestEvent", &[]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!(evt.position, deserialized.position);
+        assert_eq!(evt.event.event_type, deserialized.event.event_type);
+    }
+
+    #[test]
+    fn deserialize_with_invalid_json_fails() {
+        let invalid_json = b"{ this is not valid JSON }";
+        let res: Result<(EventRecord, usize), _> = serde_json_core::from_slice(invalid_json);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn deserialize_restores_position() {
+        let mut evt = make_event("TestEvent", &[]);
+        evt.position = 42;
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!(42, deserialized.position);
+    }
+
+    #[test]
+    fn deserialize_restores_event_type() {
+        let evt = make_event("StudentEnrolled", &[]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!("StudentEnrolled", deserialized.event.event_type);
+    }
+
+    #[test]
+    fn deserialize_restores_tags() {
+        let evt = make_event("TestEvent", &[("courseId", "123"), ("studentId", "456")]);
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!(2, deserialized.event.tags.len());
+        assert!(deserialized.event.tags.iter().any(|t| t.key == "courseId" && t.value == "123"));
+        assert!(deserialized.event.tags.iter().any(|t| t.key == "studentId" && t.value == "456"));
+    }
+
+    #[test]
+    fn deserialize_restores_metadata() {
+        let mut evt = make_event("TestEvent", &[]);
+        evt.metadata = Some(String::from("correlationId:12345"));
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!(Some(String::from("correlationId:12345")), deserialized.metadata);
+    }
+
+    #[test]
+    fn round_trip_preserves_all_data() {
+        let mut evt = make_event("CompleteEvent", &[("tag1", "value1"), ("tag2", "value2")]);
+        evt.position = 123;
+        evt.event.data = String::from("complete_data");
+        evt.metadata = Some(String::from("meta_data"));
+        evt.timestamp = 999999;
+        
+        let json_bytes = serde_json_core::to_vec::<_, 1024>(&evt).unwrap();
+        let (deserialized, _): (EventRecord, _) = serde_json_core::from_slice(&json_bytes).unwrap();
+        
+        assert_eq!(evt.position, deserialized.position);
+        assert_eq!(evt.event.event_type, deserialized.event.event_type);
+        assert_eq!(evt.event.tags.len(), deserialized.event.tags.len());
+        assert_eq!(evt.metadata, deserialized.metadata);
+        assert_eq!(evt.event.data, deserialized.event.data);
+        assert_eq!(evt.timestamp, deserialized.timestamp);
+    }
 }
