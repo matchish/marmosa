@@ -33,6 +33,42 @@ impl OpossumOptions {
         self.store_name = Some(name_str);
         self
     }
+
+    pub fn validate(&self) -> Result<(), alloc::vec::Vec<alloc::string::String>> {
+        let mut failures = alloc::vec::Vec::new();
+        if self.root_path.trim().is_empty() {
+            failures.push("RootPath cannot be null or empty".into());
+        } else {
+            #[cfg(feature = "std")]
+            {
+                let path = std::path::Path::new(&self.root_path);
+                if !path.is_absolute() {
+                    failures.push("RootPath must be an absolute path".into());
+                }
+            }
+            #[cfg(not(feature = "std"))]
+            {
+                if !self.root_path.starts_with('/') && self.root_path.chars().nth(1) != Some(':') {
+                    failures.push("RootPath must be an absolute path".into());
+                }
+            }
+            if self.root_path.contains('|') || self.root_path.contains('\0') {
+                failures.push("RootPath contains invalid characters".into());
+            }
+        }
+        if let Some(ref name) = self.store_name {
+            if name.eq_ignore_ascii_case("CON") || name.eq_ignore_ascii_case("PRN") {
+                failures.push(alloc::format!("Invalid store name '{}'", name));
+            }
+        } else {
+            failures.push("StoreName must be configured".into());
+        }
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(failures)
+        }
+    }
 }
 
 pub struct StorageInitializer<S> {

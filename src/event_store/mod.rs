@@ -1,3 +1,4 @@
+pub mod options_validation_tests;
 pub mod files;
 pub mod indices;
 pub mod initializer;
