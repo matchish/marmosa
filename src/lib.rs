@@ -7,3 +7,4 @@ pub mod error;
 pub mod event_store;
 pub mod ports;
 pub mod projections;
+pub mod extensions;

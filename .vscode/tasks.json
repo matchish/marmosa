@@ -1,0 +1,35 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Reset shell and rm file",
+			"type": "shell",
+			"command": "rm -f /Users/matchish/Code/marmosa/src/projections/options.rs || true",
+			"isBackground": false
+		},
+		{
+			"label": "cargo test options",
+			"type": "shell",
+			"command": "cargo test --lib projections::options",
+			"isBackground": false
+		},
+		{
+			"label": "Commit ProjectionOptions port",
+			"type": "shell",
+			"command": "rm ../tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsTests.cs ../tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsValidationTests.cs && git add src/projections/options.rs src/projections.rs ../tests_opossum/Opossum.UnitTests/Projections/ && git commit -m \"chore: Port C# ProjectionOptions tests to rust inline module\"",
+			"isBackground": false
+		},
+		{
+			"label": "Commit ProjectionOptions port",
+			"type": "shell",
+			"command": "rm -f tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsTests.cs tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsValidationTests.cs && git add src/projections/options.rs src/projections.rs tests_opossum/Opossum.UnitTests/Projections/ProjectionOptions* && git commit -m \"chore: Port C# ProjectionOptions tests to rust inline module\"",
+			"isBackground": false
+		},
+		{
+			"label": "Commit ProjectionOptions fixes",
+			"type": "shell",
+			"command": "rm -f tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsTests.cs tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsValidationTests.cs && git add src/projections/options.rs src/projections.rs && git add -u tests_opossum/Opossum.UnitTests/Projections && git commit -m \"chore: Port C# ProjectionOptions tests to rust inline module\"",
+			"isBackground": false
+		}
+	]
+}
