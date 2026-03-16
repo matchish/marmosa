@@ -3,6 +3,9 @@
 ## Overview
 This directory contains the feature backlog for Marmosa, a Rust port of [Opossum](https://github.com/MajorMartinDev/Opossum) - a file-based event store with DCB (Dynamic Consistency Boundaries) support.
 
+The project under heavy development significant changes acceptable. ç
+When porting from C# prefer rust idiomatic code to 1-to-1 copy from C#
+
 ## Completed Features ✅
 - [x] Core domain types (Tag, Query, DomainEvent, EventRecord, AppendCondition)
 - [x] StorageBackend trait with InMemoryStorage test double
@@ -18,7 +21,7 @@ This directory contains the feature backlog for Marmosa, a Rust port of [Opossum
 ### Phase 1: Core Functionality
 | # | Feature | Priority | Complexity |
 |---|---------|----------|------------|
-| 001 | [Integration Test: EventStore + Projections](001-integration-test-eventstore-projections.md) | High | Low |
+| 001 | [x] [Integration Test: EventStore + Projections](001-integration-test-eventstore-projections.md) | High | Low |
 | 002 | [Tag-Based Projection Indices](002-tag-based-projection-indices.md) | High | Medium |
 | 003 | [Projection Rebuild](003-projection-rebuild.md) | High | Medium |
 | 004 | [Event Indexing Engine](004-event-indexing.md) | High | High |
