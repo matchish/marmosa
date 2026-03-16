@@ -173,6 +173,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ledger_get_last_sequence_position_when_empty_returns_zero() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager = LedgerManager::new(storage.clone());
+        let _ = storage.create_dir_all("/temp").await;
+        let _ = storage.write_file("/temp/.ledger", b"").await;
+        
+        let pos = manager
+            .get_last_sequence_position_async("/temp")
+            .await
+            .unwrap();
+        assert_eq!(pos, 0);
+    }
+
+    #[tokio::test]
     async fn ledger_get_last_sequence_position_when_corrupted_errors() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let manager = LedgerManager::new(storage.clone());
@@ -230,6 +244,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ledger_update_sequence_position_with_zero_succeeds() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager = LedgerManager::new(storage.clone());
+        
+        manager
+            .update_sequence_position_async("/temp", 0)
+            .await
+            .unwrap();
+            
+        let pos = manager
+            .get_last_sequence_position_async("/temp")
+            .await
+            .unwrap();
+        assert_eq!(pos, 0);
+    }
+
+    #[tokio::test]
     async fn ledger_acquire_lock_prevents_simultaneous() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let manager = alloc::sync::Arc::new(LedgerManager::new(storage.clone()));
@@ -252,6 +283,61 @@ mod tests {
 
         manager.release_lock_async("/temp").await.unwrap();
         assert!(manager.acquire_lock_async("/temp").await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn ledger_sequential_operations_work_correctly() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager = LedgerManager::new(storage.clone());
+
+        // Initial state
+        let pos1 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        assert_eq!(pos1, 1);
+
+        // Update to position 1
+        manager.update_sequence_position_async("/temp", 1).await.unwrap();
+
+        // Next should be 2
+        let pos2 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        assert_eq!(pos2, 2);
+
+        // Update to position 2
+        manager.update_sequence_position_async("/temp", 2).await.unwrap();
+
+        // Next should be 3
+        let pos3 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        assert_eq!(pos3, 3);
+
+        // Last should be 2
+        let last = manager.get_last_sequence_position_async("/temp").await.unwrap();
+        assert_eq!(last, 2);
+    }
+
+    #[tokio::test]
+    async fn ledger_persists_across_manager_instances() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager1 = LedgerManager::new(storage.clone());
+        let manager2 = LedgerManager::new(storage.clone());
+
+        manager1.update_sequence_position_async("/temp", 100).await.unwrap();
+        let position = manager2.get_last_sequence_position_async("/temp").await.unwrap();
+
+        assert_eq!(position, 100);
+    }
+
+    #[tokio::test]
+    async fn ledger_file_has_correct_format() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager = LedgerManager::new(storage.clone());
+        
+        manager.update_sequence_position_async("/temp", 42).await.unwrap();
+        
+        let content = storage.read_file("/temp/.ledger").await.unwrap();
+        let content_str = core::str::from_utf8(&content).unwrap();
+        
+        // Ensure the fields are as expected in JSON
+        assert!(content_str.contains("LastSequencePosition") || content_str.contains("last_sequence_position") || content_str.contains("LastSequencePosition") || content_str.contains("lastSequencePosition"));
+        assert!(content_str.contains("42"));
     }
 
     #[tokio::test]
@@ -323,6 +409,30 @@ mod tests {
             .await
             .unwrap();
         let _ = storage.create_dir_all("/temp/events").await;
+
+        manager
+            .reconcile_ledger_async("/temp", "/temp/events")
+            .await
+            .unwrap();
+
+        let pos = manager
+            .get_last_sequence_position_async("/temp")
+            .await
+            .unwrap();
+        assert_eq!(pos, 3);
+    }
+
+    #[tokio::test]
+    async fn ledger_reconcile_handles_non_existent_events_directory() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let manager = LedgerManager::new(storage.clone());
+
+        manager
+            .update_sequence_position_async("/temp", 3)
+            .await
+            .unwrap();
+
+        // events path "/temp/events" does not exist
 
         manager
             .reconcile_ledger_async("/temp", "/temp/events")
