@@ -13,14 +13,21 @@ pub enum Error {
 pub trait StorageBackend {
     fn create_dir_all(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
     fn read_file(&self, path: &str) -> impl Future<Output = Result<Vec<u8>, Error>> + Send;
-    fn write_file(&self, path: &str, data: &[u8]) -> impl Future<Output = Result<(), Error>> + Send;
+    fn write_file(&self, path: &str, data: &[u8])
+    -> impl Future<Output = Result<(), Error>> + Send;
     fn delete_file(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
     fn read_dir(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Error>> + Send;
-    
+
     /// Acquires an exclusive lock for the given stream.
-    fn acquire_stream_lock(&self, stream_id: &str) -> impl Future<Output = Result<(), Error>> + Send;
+    fn acquire_stream_lock(
+        &self,
+        stream_id: &str,
+    ) -> impl Future<Output = Result<(), Error>> + Send;
     /// Releases the exclusive lock for the given stream.
-    fn release_stream_lock(&self, stream_id: &str) -> impl Future<Output = Result<(), Error>> + Send;
+    fn release_stream_lock(
+        &self,
+        stream_id: &str,
+    ) -> impl Future<Output = Result<(), Error>> + Send;
 }
 
 impl<T: ?Sized + StorageBackend + Send + Sync> StorageBackend for alloc::sync::Arc<T> {
@@ -32,7 +39,11 @@ impl<T: ?Sized + StorageBackend + Send + Sync> StorageBackend for alloc::sync::A
         (**self).read_file(path)
     }
 
-    fn write_file(&self, path: &str, data: &[u8]) -> impl Future<Output = Result<(), Error>> + Send {
+    fn write_file(
+        &self,
+        path: &str,
+        data: &[u8],
+    ) -> impl Future<Output = Result<(), Error>> + Send {
         (**self).write_file(path, data)
     }
 
@@ -44,11 +55,17 @@ impl<T: ?Sized + StorageBackend + Send + Sync> StorageBackend for alloc::sync::A
         (**self).read_dir(path)
     }
 
-    fn acquire_stream_lock(&self, stream_id: &str) -> impl Future<Output = Result<(), Error>> + Send {
+    fn acquire_stream_lock(
+        &self,
+        stream_id: &str,
+    ) -> impl Future<Output = Result<(), Error>> + Send {
         (**self).acquire_stream_lock(stream_id)
     }
 
-    fn release_stream_lock(&self, stream_id: &str) -> impl Future<Output = Result<(), Error>> + Send {
+    fn release_stream_lock(
+        &self,
+        stream_id: &str,
+    ) -> impl Future<Output = Result<(), Error>> + Send {
         (**self).release_stream_lock(stream_id)
     }
 }
@@ -61,9 +78,9 @@ pub trait Clock {
 pub mod tests {
     use super::*;
     use alloc::collections::{BTreeMap, BTreeSet};
+    use alloc::string::ToString;
     use core::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Mutex;
-    use alloc::string::ToString;
 
     pub struct InMemoryStorage {
         files: Mutex<BTreeMap<String, Vec<u8>>>,
@@ -86,13 +103,21 @@ pub mod tests {
             self.dirs.lock().unwrap().insert(path.to_string(), ());
             Ok(())
         }
-        
+
         async fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
-            self.files.lock().unwrap().get(path).cloned().ok_or(Error::NotFound)
+            self.files
+                .lock()
+                .unwrap()
+                .get(path)
+                .cloned()
+                .ok_or(Error::NotFound)
         }
-        
+
         async fn write_file(&self, path: &str, data: &[u8]) -> Result<(), Error> {
-            self.files.lock().unwrap().insert(path.to_string(), data.to_vec());
+            self.files
+                .lock()
+                .unwrap()
+                .insert(path.to_string(), data.to_vec());
             Ok(())
         }
 
@@ -104,12 +129,16 @@ pub mod tests {
                 Err(Error::NotFound)
             }
         }
-        
+
         async fn read_dir(&self, path: &str) -> Result<Vec<String>, Error> {
             let files = self.files.lock().unwrap();
             let mut result = Vec::new();
-            let prefix = if path.ends_with('/') { path.to_string() } else { format!("{}/", path) };
-            
+            let prefix = if path.ends_with('/') {
+                path.to_string()
+            } else {
+                format!("{}/", path)
+            };
+
             for k in files.keys() {
                 if k.starts_with(&prefix) {
                     let file_name = k.strip_prefix(&prefix).unwrap();
@@ -147,7 +176,9 @@ pub mod tests {
 
     impl FakeClock {
         pub fn new(start: u64) -> Self {
-            Self { time: AtomicU64::new(start) }
+            Self {
+                time: AtomicU64::new(start),
+            }
         }
         pub fn advance(&self, millis: u64) {
             self.time.fetch_add(millis, Ordering::SeqCst);

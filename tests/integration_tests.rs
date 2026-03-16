@@ -1,7 +1,7 @@
 mod common;
 
 use common::{FakeClock, InMemoryStorage};
-use marmosa::domain::{DomainEvent, Query, QueryItem, EventRecord, EventData};
+use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem};
 use marmosa::event_store::{EventStore, OpossumStore};
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
@@ -61,19 +61,16 @@ impl ProjectionDefinition for CounterProjection {
 async fn test_eventstore_projections_end_to_end() {
     let storage = Arc::new(InMemoryStorage::new());
     let clock = FakeClock::new(1000);
-    
+
     // Create event store
     let store = OpossumStore::new(Arc::clone(&storage), clock);
-    
+
     // Create projection store
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "CounterProjection".to_string());
-    
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "CounterProjection".to_string());
+
     // Create runner
-    let runner = ProjectionRunner::new(
-        Arc::clone(&storage),
-        CounterProjection,
-        projection_store,
-    );
+    let runner = ProjectionRunner::new(Arc::clone(&storage), CounterProjection, projection_store);
 
     // 1. Append CounterIncremented events
     let event1 = EventData {
@@ -85,7 +82,7 @@ async fn test_eventstore_projections_end_to_end() {
         },
         metadata: None,
     };
-    
+
     let event2 = EventData {
         event_id: "stream2-1".to_string(),
         event: DomainEvent {
@@ -96,8 +93,8 @@ async fn test_eventstore_projections_end_to_end() {
         metadata: None,
     };
 
-    store.append_async( vec![event1], None).await.unwrap();
-    store.append_async( vec![event2], None).await.unwrap();
+    store.append_async(vec![event1], None).await.unwrap();
+    store.append_async(vec![event2], None).await.unwrap();
 
     // Read events to feed to runner
     let all_events = store.read_async(Query::all(), None, None).await.unwrap();
@@ -107,18 +104,19 @@ async fn test_eventstore_projections_end_to_end() {
 
     // 3. Verify it was saved properly in projection store
     // Let's get the store again
-    let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "CounterProjection".to_string());
+    let p_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "CounterProjection".to_string());
     let state1: Option<CounterState> = p_store.get("stream1").await.unwrap();
     assert!(state1.is_some());
     assert_eq!(state1.unwrap().count, 1);
-    
+
     let state2: Option<CounterState> = p_store.get("stream2").await.unwrap();
     assert!(state2.is_some());
     assert_eq!(state2.unwrap().count, 1);
 
     let checkpoint = runner.get_checkpoint().await.unwrap();
     assert!(checkpoint.is_some());
-    
+
     // 4. Append more events to stream 1
     let event3 = EventData {
         event_id: "stream1-2".to_string(),
@@ -134,7 +132,10 @@ async fn test_eventstore_projections_end_to_end() {
     // Read events again from the checkpoint instead of all
     let checkpoint = runner.get_checkpoint().await.unwrap();
     let start_pos = checkpoint.map(|c| c.last_position);
-    let new_events = store.read_async(Query::all(), start_pos, None).await.unwrap();
+    let new_events = store
+        .read_async(Query::all(), start_pos, None)
+        .await
+        .unwrap();
 
     // 5. Run projection again (should resume from checkpoint internally skipping early ones)
     runner.process_events(&new_events).await.unwrap();

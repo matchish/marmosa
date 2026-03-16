@@ -25,11 +25,18 @@ pub trait ProjectionDefinition {
 
 /// Storage interface for projection state - can be implemented for different backends
 pub trait ProjectionStore<TState> {
-    fn get(&self, key: &str) -> impl core::future::Future<Output = Result<Option<TState>, Error>> + Send;
+    fn get(
+        &self,
+        key: &str,
+    ) -> impl core::future::Future<Output = Result<Option<TState>, Error>> + Send;
 
     fn get_all(&self) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
 
-    fn save(&self, key: &str, state: &TState) -> impl core::future::Future<Output = Result<(), Error>> + Send;
+    fn save(
+        &self,
+        key: &str,
+        state: &TState,
+    ) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 
     fn delete(&self, key: &str) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 }
@@ -44,8 +51,8 @@ pub struct ProjectionCheckpoint {
 }
 
 /// Runs a projection by reading events and applying them to the store
-pub struct ProjectionRunner<S, TState, P, Store> 
-where 
+pub struct ProjectionRunner<S, TState, P, Store>
+where
     P: ProjectionDefinition<State = TState>,
     Store: ProjectionStore<TState>,
 {
@@ -72,7 +79,10 @@ where
     }
 
     fn checkpoint_path(&self) -> String {
-        alloc::format!("Projections/_checkpoints/{}.json", self.projection.projection_name())
+        alloc::format!(
+            "Projections/_checkpoints/{}.json",
+            self.projection.projection_name()
+        )
     }
 
     pub async fn get_checkpoint(&self) -> Result<Option<ProjectionCheckpoint>, Error> {
@@ -95,23 +105,28 @@ where
             last_updated: 0, // In a real implementation we would inject a clock here
             total_events_processed: total_events,
         };
-        
-        let _ = self.storage.create_dir_all("Projections/_checkpoints").await;
+
+        let _ = self
+            .storage
+            .create_dir_all("Projections/_checkpoints")
+            .await;
         let path = self.checkpoint_path();
-        let data = serde_json_core::to_vec::<_, 512>(&checkpoint)
-            .map_err(|_| Error::IoError)?;
+        let data = serde_json_core::to_vec::<_, 512>(&checkpoint).map_err(|_| Error::IoError)?;
         self.storage.write_file(&path, &data).await
     }
 
     /// Process a batch of events starting from the last checkpoint
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {
         let query = self.projection.event_types();
-        let mut checkpoint = self.get_checkpoint().await?.unwrap_or_else(|| ProjectionCheckpoint {
-            projection_name: alloc::string::String::from(self.projection.projection_name()),
-            last_position: 0,
-            last_updated: 0,
-            total_events_processed: 0,
-        });
+        let mut checkpoint = self
+            .get_checkpoint()
+            .await?
+            .unwrap_or_else(|| ProjectionCheckpoint {
+                projection_name: alloc::string::String::from(self.projection.projection_name()),
+                last_position: 0,
+                last_updated: 0,
+                total_events_processed: 0,
+            });
 
         for event in events {
             // Skip events we've already processed
@@ -129,7 +144,7 @@ where
             if let Some(key) = self.projection.key_selector(event) {
                 // Load current state
                 let current_state = self.store.get(&key).await?;
-                
+
                 // Apply event
                 if let Some(new_state) = self.projection.apply(current_state, event) {
                     self.store.save(&key, &new_state).await?;
@@ -142,7 +157,8 @@ where
 
         // Save checkpoint
         if checkpoint.last_position > 0 {
-            self.save_checkpoint(checkpoint.last_position, checkpoint.total_events_processed).await?;
+            self.save_checkpoint(checkpoint.last_position, checkpoint.total_events_processed)
+                .await?;
         }
 
         Ok(checkpoint.last_position)
@@ -174,15 +190,15 @@ impl<S, TState> StorageBackendProjectionStore<S, TState> {
     }
 }
 
-impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync> ProjectionStore<TState>
-    for StorageBackendProjectionStore<S, TState>
+impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync>
+    ProjectionStore<TState> for StorageBackendProjectionStore<S, TState>
 {
     async fn get(&self, key: &str) -> Result<Option<TState>, Error> {
         let path = self.get_file_path(key);
         match self.storage.read_file(&path).await {
             Ok(data) => {
-                let (state, _) = serde_json_core::from_slice::<TState>(&data)
-                    .map_err(|_| Error::IoError)?;
+                let (state, _) =
+                    serde_json_core::from_slice::<TState>(&data).map_err(|_| Error::IoError)?;
                 Ok(Some(state))
             }
             Err(Error::NotFound) => Ok(None),
@@ -193,7 +209,7 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
     async fn get_all(&self) -> Result<Vec<TState>, Error> {
         let dir_path = self.get_projection_path();
         let files = self.storage.read_dir(&dir_path).await.unwrap_or_default();
-        
+
         let mut results = Vec::new();
         for file_path in files {
             if file_path.ends_with(".json") {
@@ -210,10 +226,9 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
     async fn save(&self, key: &str, state: &TState) -> Result<(), Error> {
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
-        
+
         let path = self.get_file_path(key);
-        let data = serde_json_core::to_vec::<_, 4096>(state)
-            .map_err(|_| Error::IoError)?;
+        let data = serde_json_core::to_vec::<_, 4096>(state).map_err(|_| Error::IoError)?;
         self.storage.write_file(&path, &data).await
     }
 
@@ -234,7 +249,7 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
-    
+
     fn get_index_path(&self, root_path: &str, tag: &Tag) -> String {
         let tag_key = tag.key.to_ascii_lowercase();
         let tag_value = tag.value.to_ascii_lowercase();
@@ -242,36 +257,51 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     }
 
     fn get_tag_lock_key(&self, root_path: &str, tag: &Tag) -> String {
-        alloc::format!("{}|{}|{}", root_path, tag.key.to_ascii_lowercase(), tag.value.to_ascii_lowercase())
+        alloc::format!(
+            "{}|{}|{}",
+            root_path,
+            tag.key.to_ascii_lowercase(),
+            tag.value.to_ascii_lowercase()
+        )
     }
 
-    pub async fn add_projection(&self, root_path: &str, tag: &Tag, projection_key: &str) -> Result<(), Error> {
+    pub async fn add_projection(
+        &self,
+        root_path: &str,
+        tag: &Tag,
+        projection_key: &str,
+    ) -> Result<(), Error> {
         let indices_dir = alloc::format!("{}/Indices", root_path);
         let _ = self.storage.create_dir_all(&indices_dir).await;
-        
+
         let index_path = self.get_index_path(root_path, tag);
         let lock_key = self.get_tag_lock_key(root_path, tag);
-        
+
         self.storage.acquire_stream_lock(&lock_key).await?;
-        
+
         let mut keys = self.read_keys(&index_path).await.unwrap_or_default();
         if !keys.contains(&alloc::string::String::from(projection_key)) {
             keys.push(alloc::string::String::from(projection_key));
-            // C# implementation uses temp file + rename, here we'll just write directly. 
+            // C# implementation uses temp file + rename, here we'll just write directly.
             // In a real implementation this would need atomicity.
             if let Ok(data) = serde_json_core::to_vec::<_, 4096>(&keys) {
                 let _ = self.storage.write_file(&index_path, &data).await;
             }
         }
-        
+
         self.storage.release_stream_lock(&lock_key).await?;
         Ok(())
     }
 
-    pub async fn remove_projection(&self, root_path: &str, tag: &Tag, projection_key: &str) -> Result<(), Error> {
+    pub async fn remove_projection(
+        &self,
+        root_path: &str,
+        tag: &Tag,
+        projection_key: &str,
+    ) -> Result<(), Error> {
         let index_path = self.get_index_path(root_path, tag);
         let lock_key = self.get_tag_lock_key(root_path, tag);
-        
+
         // Return early if file doesn't exist to save locking
         if let Err(Error::NotFound) = self.storage.read_file(&index_path).await {
             return Ok(());
@@ -282,7 +312,7 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
         let mut keys = self.read_keys(&index_path).await.unwrap_or_default();
         let original_len = keys.len();
         keys.retain(|k| k != projection_key);
-        
+
         if keys.len() != original_len {
             if keys.is_empty() {
                 let _ = self.storage.delete_file(&index_path).await;
@@ -295,16 +325,24 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
         Ok(())
     }
 
-    pub async fn get_projection_keys_by_tag(&self, root_path: &str, tag: &Tag) -> Result<Vec<String>, Error> {
+    pub async fn get_projection_keys_by_tag(
+        &self,
+        root_path: &str,
+        tag: &Tag,
+    ) -> Result<Vec<String>, Error> {
         let index_path = self.get_index_path(root_path, tag);
         Ok(self.read_keys(&index_path).await.unwrap_or_default())
     }
 
-    pub async fn get_projection_keys_by_tags(&self, root_path: &str, tags: &[Tag]) -> Result<Vec<String>, Error> {
+    pub async fn get_projection_keys_by_tags(
+        &self,
+        root_path: &str,
+        tags: &[Tag],
+    ) -> Result<Vec<String>, Error> {
         if tags.is_empty() {
             return Ok(Vec::new());
         }
-        
+
         let mut key_sets = Vec::new();
         for tag in tags {
             let keys = self.get_projection_keys_by_tag(root_path, tag).await?;
@@ -331,34 +369,36 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     }
 
     pub async fn update_projection_tags(
-        &self, 
-        root_path: &str, 
-        projection_key: &str, 
-        old_tags: &[Tag], 
-        new_tags: &[Tag]
+        &self,
+        root_path: &str,
+        projection_key: &str,
+        old_tags: &[Tag],
+        new_tags: &[Tag],
     ) -> Result<(), Error> {
         // Find tags to remove (in old but not in new)
         for old_tag in old_tags {
-            let matches_new = new_tags.iter().any(|t| 
-                t.key.eq_ignore_ascii_case(&old_tag.key) && 
-                t.value.eq_ignore_ascii_case(&old_tag.value)
-            );
+            let matches_new = new_tags.iter().any(|t| {
+                t.key.eq_ignore_ascii_case(&old_tag.key)
+                    && t.value.eq_ignore_ascii_case(&old_tag.value)
+            });
             if !matches_new {
-                self.remove_projection(root_path, old_tag, projection_key).await?;
+                self.remove_projection(root_path, old_tag, projection_key)
+                    .await?;
             }
         }
-        
+
         // Find tags to add (in new but not in old)
         for new_tag in new_tags {
-            let matches_old = old_tags.iter().any(|t| 
-                t.key.eq_ignore_ascii_case(&new_tag.key) && 
-                t.value.eq_ignore_ascii_case(&new_tag.value)
-            );
+            let matches_old = old_tags.iter().any(|t| {
+                t.key.eq_ignore_ascii_case(&new_tag.key)
+                    && t.value.eq_ignore_ascii_case(&new_tag.value)
+            });
             if !matches_old {
-                self.add_projection(root_path, new_tag, projection_key).await?;
+                self.add_projection(root_path, new_tag, projection_key)
+                    .await?;
             }
         }
-        
+
         Ok(())
     }
 
@@ -387,7 +427,6 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ProjectionMetadata {
     pub created_at: u64,
@@ -413,40 +452,63 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         alloc::format!("metadata_lock:{}", root_path)
     }
 
-    pub async fn save(&self, root_path: &str, key: &str, metadata: ProjectionMetadata) -> Result<(), crate::ports::Error> {
-        let _ = self.storage.create_dir_all(&alloc::format!("{}/Metadata", root_path)).await;
-        
+    pub async fn save(
+        &self,
+        root_path: &str,
+        key: &str,
+        metadata: ProjectionMetadata,
+    ) -> Result<(), crate::ports::Error> {
+        let _ = self
+            .storage
+            .create_dir_all(&alloc::format!("{}/Metadata", root_path))
+            .await;
+
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
-        
+
         self.storage.acquire_stream_lock(&lock_key).await?;
-        
+
         let mut index = self.read_index(&index_path).await.unwrap_or_default();
         index.insert(alloc::string::String::from(key), metadata);
-        
+
         if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&index) {
             let _ = self.storage.write_file(&index_path, &data).await;
         }
-        
+
         self.storage.release_stream_lock(&lock_key).await?;
         Ok(())
     }
 
-    pub async fn get(&self, root_path: &str, key: &str) -> Result<Option<ProjectionMetadata>, crate::ports::Error> {
+    pub async fn get(
+        &self,
+        root_path: &str,
+        key: &str,
+    ) -> Result<Option<ProjectionMetadata>, crate::ports::Error> {
         let index_path = self.get_index_path(root_path);
         let index = self.read_index(&index_path).await.unwrap_or_default();
         Ok(index.get(key).cloned())
     }
 
-    pub async fn get_all(&self, root_path: &str) -> Result<alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>, crate::ports::Error> {
+    pub async fn get_all(
+        &self,
+        root_path: &str,
+    ) -> Result<
+        alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>,
+        crate::ports::Error,
+    > {
         let index_path = self.get_index_path(root_path);
         Ok(self.read_index(&index_path).await.unwrap_or_default())
     }
 
-    pub async fn get_updated_since(&self, root_path: &str, cutoff_time: u64) -> Result<alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)>, crate::ports::Error> {
+    pub async fn get_updated_since(
+        &self,
+        root_path: &str,
+        cutoff_time: u64,
+    ) -> Result<alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)>, crate::ports::Error>
+    {
         let index_path = self.get_index_path(root_path);
         let index = self.read_index(&index_path).await.unwrap_or_default();
-        
+
         let mut result = alloc::vec::Vec::new();
         for (k, v) in index {
             if v.last_updated_at >= cutoff_time {
@@ -459,13 +521,13 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
     pub async fn delete(&self, root_path: &str, key: &str) -> Result<(), crate::ports::Error> {
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
-        
+
         if let Err(crate::ports::Error::NotFound) = self.storage.read_file(&index_path).await {
             return Ok(());
         }
 
         self.storage.acquire_stream_lock(&lock_key).await?;
-        
+
         let mut index = self.read_index(&index_path).await.unwrap_or_default();
         if index.remove(key).is_some() {
             if index.is_empty() {
@@ -474,7 +536,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
                 let _ = self.storage.write_file(&index_path, &data).await;
             }
         }
-        
+
         self.storage.release_stream_lock(&lock_key).await?;
         Ok(())
     }
@@ -482,17 +544,26 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
     pub async fn clear(&self, root_path: &str) -> Result<(), crate::ports::Error> {
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
-        
+
         self.storage.acquire_stream_lock(&lock_key).await?;
         let _ = self.storage.delete_file(&index_path).await;
         self.storage.release_stream_lock(&lock_key).await?;
         Ok(())
     }
 
-    async fn read_index(&self, path: &str) -> Result<alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>, crate::ports::Error> {
+    async fn read_index(
+        &self,
+        path: &str,
+    ) -> Result<
+        alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>,
+        crate::ports::Error,
+    > {
         match self.storage.read_file(path).await {
             Ok(data) => {
-                match serde_json_core::from_slice::<alloc::collections::BTreeMap<&str, ProjectionMetadata>>(&data) {
+                match serde_json_core::from_slice::<
+                    alloc::collections::BTreeMap<&str, ProjectionMetadata>,
+                >(&data)
+                {
                     Ok((index, _)) => {
                         let mut string_index = alloc::collections::BTreeMap::new();
                         for (k, v) in index {
@@ -525,7 +596,7 @@ mod tests {
         assert_eq!(metadata.version, 1);
         assert_eq!(metadata.size_in_bytes, 256);
     }
-    
+
     #[test]
     fn test_projection_metadata_supports_with_syntax() {
         let original = ProjectionMetadata {
@@ -550,7 +621,12 @@ mod tests {
     async fn test_projection_metadata_index_save() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionMetadataIndex::new(storage.clone());
-        let m = ProjectionMetadata { created_at: 1000, last_updated_at: 1000, version: 1, size_in_bytes: 256 };
+        let m = ProjectionMetadata {
+            created_at: 1000,
+            last_updated_at: 1000,
+            version: 1,
+            size_in_bytes: 256,
+        };
         index.save("/temp", "k1", m.clone()).await.unwrap();
         assert!(storage.read_file("/temp/Metadata/index.json").await.is_ok());
         let fetched = index.get("/temp", "k1").await.unwrap().unwrap();
@@ -561,8 +637,32 @@ mod tests {
     async fn test_projection_metadata_index_get_all() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionMetadataIndex::new(storage.clone());
-        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
-        index.save("/temp", "k2", ProjectionMetadata { created_at: 2, last_updated_at: 2, version: 2, size_in_bytes: 2 }).await.unwrap();
+        index
+            .save(
+                "/temp",
+                "k1",
+                ProjectionMetadata {
+                    created_at: 1,
+                    last_updated_at: 1,
+                    version: 1,
+                    size_in_bytes: 1,
+                },
+            )
+            .await
+            .unwrap();
+        index
+            .save(
+                "/temp",
+                "k2",
+                ProjectionMetadata {
+                    created_at: 2,
+                    last_updated_at: 2,
+                    version: 2,
+                    size_in_bytes: 2,
+                },
+            )
+            .await
+            .unwrap();
         let all = index.get_all("/temp").await.unwrap();
         assert_eq!(all.len(), 2);
     }
@@ -571,8 +671,32 @@ mod tests {
     async fn test_projection_metadata_index_get_updated_since() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionMetadataIndex::new(storage.clone());
-        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
-        index.save("/temp", "k2", ProjectionMetadata { created_at: 2, last_updated_at: 10, version: 2, size_in_bytes: 2 }).await.unwrap();
+        index
+            .save(
+                "/temp",
+                "k1",
+                ProjectionMetadata {
+                    created_at: 1,
+                    last_updated_at: 1,
+                    version: 1,
+                    size_in_bytes: 1,
+                },
+            )
+            .await
+            .unwrap();
+        index
+            .save(
+                "/temp",
+                "k2",
+                ProjectionMetadata {
+                    created_at: 2,
+                    last_updated_at: 10,
+                    version: 2,
+                    size_in_bytes: 2,
+                },
+            )
+            .await
+            .unwrap();
         let recent = index.get_updated_since("/temp", 5).await.unwrap();
         assert_eq!(recent.len(), 1);
         assert_eq!(recent[0].0, "k2");
@@ -582,7 +706,19 @@ mod tests {
     async fn test_projection_metadata_index_delete() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionMetadataIndex::new(storage.clone());
-        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index
+            .save(
+                "/temp",
+                "k1",
+                ProjectionMetadata {
+                    created_at: 1,
+                    last_updated_at: 1,
+                    version: 1,
+                    size_in_bytes: 1,
+                },
+            )
+            .await
+            .unwrap();
         index.delete("/temp", "k1").await.unwrap();
         let fetched = index.get("/temp", "k1").await.unwrap();
         assert!(fetched.is_none());
@@ -592,26 +728,44 @@ mod tests {
     async fn test_projection_metadata_index_clear() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionMetadataIndex::new(storage.clone());
-        index.save("/temp", "k1", ProjectionMetadata { created_at: 1, last_updated_at: 1, version: 1, size_in_bytes: 1 }).await.unwrap();
+        index
+            .save(
+                "/temp",
+                "k1",
+                ProjectionMetadata {
+                    created_at: 1,
+                    last_updated_at: 1,
+                    version: 1,
+                    size_in_bytes: 1,
+                },
+            )
+            .await
+            .unwrap();
         index.clear("/temp").await.unwrap();
         let all = index.get_all("/temp").await.unwrap();
         assert!(all.is_empty());
     }
 
     use super::*;
-    use alloc::string::ToString;
-    use alloc::vec;
     use crate::domain::{DomainEvent, Tag};
     use crate::ports::tests::InMemoryStorage;
+    use alloc::string::ToString;
+    use alloc::vec;
 
     #[tokio::test]
     async fn projection_tag_index_add_projection_creates_index_file() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
         let projection_key = "proj-1";
 
-        index.add_projection("/temp", &tag, projection_key).await.unwrap();
+        index
+            .add_projection("/temp", &tag, projection_key)
+            .await
+            .unwrap();
 
         let index_file = "/temp/Indices/status_active.json";
         assert!(storage.read_file(index_file).await.is_ok());
@@ -621,13 +775,19 @@ mod tests {
     async fn projection_tag_index_add_projection_adds_key_to_existing_index() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
 
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
         index.add_projection("/temp", &tag, "proj-2").await.unwrap();
         index.add_projection("/temp", &tag, "proj-3").await.unwrap();
 
-        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        let keys = index
+            .get_projection_keys_by_tag("/temp", &tag)
+            .await
+            .unwrap();
         assert_eq!(keys.len(), 3);
         assert!(keys.contains(&"proj-1".to_string()));
         assert!(keys.contains(&"proj-2".to_string()));
@@ -638,12 +798,18 @@ mod tests {
     async fn projection_tag_index_add_projection_prevents_duplicates() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
 
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
 
-        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        let keys = index
+            .get_projection_keys_by_tag("/temp", &tag)
+            .await
+            .unwrap();
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0], "proj-1");
     }
@@ -652,14 +818,23 @@ mod tests {
     async fn projection_tag_index_remove_projection_removes_key_from_index() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
 
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
         index.add_projection("/temp", &tag, "proj-2").await.unwrap();
 
-        index.remove_projection("/temp", &tag, "proj-1").await.unwrap();
+        index
+            .remove_projection("/temp", &tag, "proj-1")
+            .await
+            .unwrap();
 
-        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        let keys = index
+            .get_projection_keys_by_tag("/temp", &tag)
+            .await
+            .unwrap();
         assert_eq!(keys.len(), 1);
         assert_eq!(keys[0], "proj-2");
     }
@@ -668,10 +843,16 @@ mod tests {
     async fn projection_tag_index_remove_projection_deletes_index_file_when_empty() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
 
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
-        index.remove_projection("/temp", &tag, "proj-1").await.unwrap();
+        index
+            .remove_projection("/temp", &tag, "proj-1")
+            .await
+            .unwrap();
 
         let index_file = "/temp/Indices/status_active.json";
         assert!(storage.read_file(index_file).await.is_err());
@@ -681,9 +862,15 @@ mod tests {
     async fn projection_tag_index_get_projection_keys_by_tag_returns_empty_for_non_existent() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Inactive".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Inactive".to_string(),
+        };
 
-        let keys = index.get_projection_keys_by_tag("/temp", &tag).await.unwrap();
+        let keys = index
+            .get_projection_keys_by_tag("/temp", &tag)
+            .await
+            .unwrap();
         assert!(keys.is_empty());
     }
 
@@ -691,36 +878,73 @@ mod tests {
     async fn projection_tag_index_get_projection_keys_by_tags_returns_intersection() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag1 = Tag { key: "Status".to_string(), value: "Active".to_string() };
-        let tag2 = Tag { key: "Tier".to_string(), value: "Premium".to_string() };
+        let tag1 = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
+        let tag2 = Tag {
+            key: "Tier".to_string(),
+            value: "Premium".to_string(),
+        };
 
-        index.add_projection("/temp", &tag1, "proj-1").await.unwrap();
-        index.add_projection("/temp", &tag1, "proj-2").await.unwrap();
-        index.add_projection("/temp", &tag1, "proj-3").await.unwrap();
+        index
+            .add_projection("/temp", &tag1, "proj-1")
+            .await
+            .unwrap();
+        index
+            .add_projection("/temp", &tag1, "proj-2")
+            .await
+            .unwrap();
+        index
+            .add_projection("/temp", &tag1, "proj-3")
+            .await
+            .unwrap();
 
-        index.add_projection("/temp", &tag2, "proj-1").await.unwrap();
-        index.add_projection("/temp", &tag2, "proj-3").await.unwrap();
+        index
+            .add_projection("/temp", &tag2, "proj-1")
+            .await
+            .unwrap();
+        index
+            .add_projection("/temp", &tag2, "proj-3")
+            .await
+            .unwrap();
 
         let tags = alloc::vec![tag1, tag2];
-        let keys = index.get_projection_keys_by_tags("/temp", &tags).await.unwrap();
-        
+        let keys = index
+            .get_projection_keys_by_tags("/temp", &tags)
+            .await
+            .unwrap();
+
         assert_eq!(keys.len(), 2);
         assert!(keys.contains(&"proj-1".to_string()));
         assert!(keys.contains(&"proj-3".to_string()));
     }
 
     #[tokio::test]
-    async fn projection_tag_index_get_projection_keys_by_tags_returns_empty_if_any_tag_has_no_matches() {
+    async fn projection_tag_index_get_projection_keys_by_tags_returns_empty_if_any_tag_has_no_matches()
+     {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag1 = Tag { key: "Status".to_string(), value: "Active".to_string() };
-        let tag2 = Tag { key: "NonExistent".to_string(), value: "Value".to_string() };
+        let tag1 = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
+        let tag2 = Tag {
+            key: "NonExistent".to_string(),
+            value: "Value".to_string(),
+        };
 
-        index.add_projection("/temp", &tag1, "proj-1").await.unwrap();
+        index
+            .add_projection("/temp", &tag1, "proj-1")
+            .await
+            .unwrap();
 
         let tags = alloc::vec![tag1, tag2];
-        let keys = index.get_projection_keys_by_tags("/temp", &tags).await.unwrap();
-        
+        let keys = index
+            .get_projection_keys_by_tags("/temp", &tags)
+            .await
+            .unwrap();
+
         assert!(keys.is_empty());
     }
 
@@ -729,33 +953,60 @@ mod tests {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
         let proj_key = "proj-1";
-        
+
         let old_tags = alloc::vec![
-            Tag { key: "Status".to_string(), value: "Pending".to_string() },
-            Tag { key: "Tier".to_string(), value: "Basic".to_string() }
+            Tag {
+                key: "Status".to_string(),
+                value: "Pending".to_string()
+            },
+            Tag {
+                key: "Tier".to_string(),
+                value: "Basic".to_string()
+            }
         ];
-        
+
         let new_tags = alloc::vec![
-            Tag { key: "Status".to_string(), value: "Active".to_string() },
-            Tag { key: "Tier".to_string(), value: "Premium".to_string() }
+            Tag {
+                key: "Status".to_string(),
+                value: "Active".to_string()
+            },
+            Tag {
+                key: "Tier".to_string(),
+                value: "Premium".to_string()
+            }
         ];
 
         for tag in &old_tags {
             index.add_projection("/temp", tag, proj_key).await.unwrap();
         }
 
-        index.update_projection_tags("/temp", proj_key, &old_tags, &new_tags).await.unwrap();
+        index
+            .update_projection_tags("/temp", proj_key, &old_tags, &new_tags)
+            .await
+            .unwrap();
 
-        let pending_keys = index.get_projection_keys_by_tag("/temp", &old_tags[0]).await.unwrap();
+        let pending_keys = index
+            .get_projection_keys_by_tag("/temp", &old_tags[0])
+            .await
+            .unwrap();
         assert!(pending_keys.is_empty());
 
-        let basic_keys = index.get_projection_keys_by_tag("/temp", &old_tags[1]).await.unwrap();
+        let basic_keys = index
+            .get_projection_keys_by_tag("/temp", &old_tags[1])
+            .await
+            .unwrap();
         assert!(basic_keys.is_empty());
 
-        let active_keys = index.get_projection_keys_by_tag("/temp", &new_tags[0]).await.unwrap();
+        let active_keys = index
+            .get_projection_keys_by_tag("/temp", &new_tags[0])
+            .await
+            .unwrap();
         assert!(active_keys.contains(&proj_key.to_string()));
 
-        let premium_keys = index.get_projection_keys_by_tag("/temp", &new_tags[1]).await.unwrap();
+        let premium_keys = index
+            .get_projection_keys_by_tag("/temp", &new_tags[1])
+            .await
+            .unwrap();
         assert!(premium_keys.contains(&proj_key.to_string()));
     }
 
@@ -764,30 +1015,54 @@ mod tests {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
         let proj_key = "proj-1";
-        
+
         let old_tags = alloc::vec![
-            Tag { key: "Status".to_string(), value: "Active".to_string() },
-            Tag { key: "Tier".to_string(), value: "Basic".to_string() }
+            Tag {
+                key: "Status".to_string(),
+                value: "Active".to_string()
+            },
+            Tag {
+                key: "Tier".to_string(),
+                value: "Basic".to_string()
+            }
         ];
-        
+
         let new_tags = alloc::vec![
-            Tag { key: "Status".to_string(), value: "Active".to_string() }, // Unchanged
-            Tag { key: "Tier".to_string(), value: "Premium".to_string() }  // Changed
+            Tag {
+                key: "Status".to_string(),
+                value: "Active".to_string()
+            }, // Unchanged
+            Tag {
+                key: "Tier".to_string(),
+                value: "Premium".to_string()
+            } // Changed
         ];
 
         for tag in &old_tags {
             index.add_projection("/temp", tag, proj_key).await.unwrap();
         }
 
-        index.update_projection_tags("/temp", proj_key, &old_tags, &new_tags).await.unwrap();
+        index
+            .update_projection_tags("/temp", proj_key, &old_tags, &new_tags)
+            .await
+            .unwrap();
 
-        let active_keys = index.get_projection_keys_by_tag("/temp", &new_tags[0]).await.unwrap();
+        let active_keys = index
+            .get_projection_keys_by_tag("/temp", &new_tags[0])
+            .await
+            .unwrap();
         assert!(active_keys.contains(&proj_key.to_string()));
 
-        let basic_keys = index.get_projection_keys_by_tag("/temp", &old_tags[1]).await.unwrap();
+        let basic_keys = index
+            .get_projection_keys_by_tag("/temp", &old_tags[1])
+            .await
+            .unwrap();
         assert!(basic_keys.is_empty());
 
-        let premium_keys = index.get_projection_keys_by_tag("/temp", &new_tags[1]).await.unwrap();
+        let premium_keys = index
+            .get_projection_keys_by_tag("/temp", &new_tags[1])
+            .await
+            .unwrap();
         assert!(premium_keys.contains(&proj_key.to_string()));
     }
 
@@ -795,12 +1070,15 @@ mod tests {
     async fn projection_tag_index_delete_all_indices_removes_indices() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = ProjectionTagIndex::new(storage.clone());
-        let tag = Tag { key: "Status".to_string(), value: "Active".to_string() };
+        let tag = Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        };
 
         index.add_projection("/temp", &tag, "proj-1").await.unwrap();
-        
+
         index.delete_all_indices("/temp").await.unwrap();
-        
+
         let index_file = "/temp/Indices/status_active.json";
         assert!(storage.read_file(index_file).await.is_err());
     }
@@ -809,10 +1087,13 @@ mod tests {
     async fn projection_tag_index_concurrent_addition_same_tag_no_lost_updates() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let index = alloc::sync::Arc::new(ProjectionTagIndex::new(storage.clone()));
-        let tag = alloc::sync::Arc::new(Tag { key: "Status".to_string(), value: "Active".to_string() });
-        
+        let tag = alloc::sync::Arc::new(Tag {
+            key: "Status".to_string(),
+            value: "Active".to_string(),
+        });
+
         let mut handles = alloc::vec::Vec::new();
-        
+
         for i in 0..50 {
             let idx = index.clone();
             let t = tag.clone();
@@ -821,12 +1102,15 @@ mod tests {
                 idx.add_projection("/temp_p", &t, &key).await.unwrap();
             }));
         }
-        
+
         for handle in handles {
             handle.await.unwrap();
         }
-        
-        let keys = index.get_projection_keys_by_tag("/temp_p", &tag).await.unwrap();
+
+        let keys = index
+            .get_projection_keys_by_tag("/temp_p", &tag)
+            .await
+            .unwrap();
         assert_eq!(keys.len(), 50);
     }
 
@@ -857,19 +1141,25 @@ mod tests {
 
         fn key_selector(&self, event: &EventRecord) -> Option<String> {
             // Extract key from tags
-            event.event.tags.iter()
+            event
+                .event
+                .tags
+                .iter()
                 .find(|t| t.key == "counter_id")
                 .map(|t| t.value.clone())
         }
 
         fn apply(&self, state: Option<Self::State>, event: &EventRecord) -> Option<Self::State> {
             let key = self.key_selector(event)?;
-            let mut current = state.unwrap_or_else(|| CounterState { key: key.clone(), count: 0 });
-            
+            let mut current = state.unwrap_or_else(|| CounterState {
+                key: key.clone(),
+                count: 0,
+            });
+
             if event.event.event_type == "CounterIncremented" {
                 current.count += 1;
             }
-            
+
             Some(current)
         }
     }
@@ -885,27 +1175,33 @@ mod tests {
         let projection = CounterProjection;
         let query = projection.event_types();
         assert_eq!(query.items.len(), 1);
-        assert_eq!(query.items[0].event_types, vec!["CounterIncremented".to_string()]);
+        assert_eq!(
+            query.items[0].event_types,
+            vec!["CounterIncremented".to_string()]
+        );
     }
 
     #[test]
     fn test_projection_apply_creates_new_state() {
         let projection = CounterProjection;
-        
+
         let event = EventRecord {
             position: 0,
             event_id: "evt-1".to_string(),
             event: DomainEvent {
                 event_type: "CounterIncremented".to_string(),
                 data: "{}".to_string(),
-                tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                tags: vec![Tag {
+                    key: "counter_id".to_string(),
+                    value: "counter-1".to_string(),
+                }],
             },
             metadata: None,
             timestamp: 1000,
         };
 
         let new_state = projection.apply(None, &event);
-        
+
         assert!(new_state.is_some());
         let state = new_state.unwrap();
         assert_eq!(state.key, "counter-1");
@@ -915,23 +1211,29 @@ mod tests {
     #[test]
     fn test_projection_apply_updates_existing_state() {
         let projection = CounterProjection;
-        
-        let existing = CounterState { key: "counter-1".to_string(), count: 5 };
-        
+
+        let existing = CounterState {
+            key: "counter-1".to_string(),
+            count: 5,
+        };
+
         let event = EventRecord {
             position: 1,
             event_id: "evt-2".to_string(),
             event: DomainEvent {
                 event_type: "CounterIncremented".to_string(),
                 data: "{}".to_string(),
-                tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                tags: vec![Tag {
+                    key: "counter_id".to_string(),
+                    value: "counter-1".to_string(),
+                }],
             },
             metadata: None,
             timestamp: 2000,
         };
 
         let new_state = projection.apply(Some(existing), &event);
-        
+
         assert!(new_state.is_some());
         let state = new_state.unwrap();
         assert_eq!(state.count, 6);
@@ -940,14 +1242,17 @@ mod tests {
     #[test]
     fn test_key_selector_extracts_from_tags() {
         let projection = CounterProjection;
-        
+
         let event = EventRecord {
             position: 0,
             event_id: "evt-1".to_string(),
             event: DomainEvent {
                 event_type: "CounterIncremented".to_string(),
                 data: "{}".to_string(),
-                tags: vec![Tag { key: "counter_id".to_string(), value: "my-counter".to_string() }],
+                tags: vec![Tag {
+                    key: "counter_id".to_string(),
+                    value: "my-counter".to_string(),
+                }],
             },
             metadata: None,
             timestamp: 1000,
@@ -960,14 +1265,14 @@ mod tests {
     #[test]
     fn test_key_selector_returns_none_when_tag_missing() {
         let projection = CounterProjection;
-        
+
         let event = EventRecord {
             position: 0,
             event_id: "evt-1".to_string(),
             event: DomainEvent {
                 event_type: "CounterIncremented".to_string(),
                 data: "{}".to_string(),
-                tags: vec![],  // No tags
+                tags: vec![], // No tags
             },
             metadata: None,
             timestamp: 1000,
@@ -982,10 +1287,13 @@ mod tests {
     #[tokio::test]
     async fn test_projection_store_save_and_get() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<_, CounterState> = 
+        let store: StorageBackendProjectionStore<_, CounterState> =
             StorageBackendProjectionStore::new(storage, "CounterProjection".to_string());
 
-        let state = CounterState { key: "counter-1".to_string(), count: 42 };
+        let state = CounterState {
+            key: "counter-1".to_string(),
+            count: 42,
+        };
         store.save("counter-1", &state).await.unwrap();
 
         let retrieved = store.get("counter-1").await.unwrap();
@@ -996,7 +1304,7 @@ mod tests {
     #[tokio::test]
     async fn test_projection_store_get_returns_none_for_missing() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<_, CounterState> = 
+        let store: StorageBackendProjectionStore<_, CounterState> =
             StorageBackendProjectionStore::new(storage, "CounterProjection".to_string());
 
         let retrieved = store.get("nonexistent").await.unwrap();
@@ -1006,10 +1314,13 @@ mod tests {
     #[tokio::test]
     async fn test_projection_store_delete() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<_, CounterState> = 
+        let store: StorageBackendProjectionStore<_, CounterState> =
             StorageBackendProjectionStore::new(storage, "CounterProjection".to_string());
 
-        let state = CounterState { key: "counter-1".to_string(), count: 10 };
+        let state = CounterState {
+            key: "counter-1".to_string(),
+            count: 10,
+        };
         store.save("counter-1", &state).await.unwrap();
 
         // Verify it exists
@@ -1025,16 +1336,43 @@ mod tests {
     #[tokio::test]
     async fn test_projection_store_get_all() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<_, CounterState> = 
+        let store: StorageBackendProjectionStore<_, CounterState> =
             StorageBackendProjectionStore::new(storage, "CounterProjection".to_string());
 
-        store.save("counter-1", &CounterState { key: "counter-1".to_string(), count: 1 }).await.unwrap();
-        store.save("counter-2", &CounterState { key: "counter-2".to_string(), count: 2 }).await.unwrap();
-        store.save("counter-3", &CounterState { key: "counter-3".to_string(), count: 3 }).await.unwrap();
+        store
+            .save(
+                "counter-1",
+                &CounterState {
+                    key: "counter-1".to_string(),
+                    count: 1,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .save(
+                "counter-2",
+                &CounterState {
+                    key: "counter-2".to_string(),
+                    count: 2,
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .save(
+                "counter-3",
+                &CounterState {
+                    key: "counter-3".to_string(),
+                    count: 3,
+                },
+            )
+            .await
+            .unwrap();
 
         let all = store.get_all().await.unwrap();
         assert_eq!(all.len(), 3);
-        
+
         // Verify total count
         let total: u64 = all.iter().map(|s| s.count).sum();
         assert_eq!(total, 6);
@@ -1101,9 +1439,12 @@ mod tests {
     #[tokio::test]
     async fn test_projection_runner_processes_events() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> = 
-            StorageBackendProjectionStore::new(InMemoryStorage::new(), "CounterProjection".to_string());
-        
+        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+            StorageBackendProjectionStore::new(
+                InMemoryStorage::new(),
+                "CounterProjection".to_string(),
+            );
+
         let runner = ProjectionRunner::new(storage, CounterProjection, store);
 
         let events = vec![
@@ -1113,7 +1454,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 1000,
@@ -1124,7 +1468,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 2000,
@@ -1143,24 +1490,28 @@ mod tests {
     #[tokio::test]
     async fn test_projection_runner_saves_checkpoint() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> = 
-            StorageBackendProjectionStore::new(InMemoryStorage::new(), "CounterProjection".to_string());
-        
+        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+            StorageBackendProjectionStore::new(
+                InMemoryStorage::new(),
+                "CounterProjection".to_string(),
+            );
+
         let runner = ProjectionRunner::new(storage, CounterProjection, store);
 
-        let events = vec![
-            EventRecord {
-                position: 5,
-                event_id: "evt-5".to_string(),
-                event: DomainEvent {
-                    event_type: "CounterIncremented".to_string(),
-                    data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
-                },
-                metadata: None,
-                timestamp: 5000,
+        let events = vec![EventRecord {
+            position: 5,
+            event_id: "evt-5".to_string(),
+            event: DomainEvent {
+                event_type: "CounterIncremented".to_string(),
+                data: "{}".to_string(),
+                tags: vec![Tag {
+                    key: "counter_id".to_string(),
+                    value: "counter-1".to_string(),
+                }],
             },
-        ];
+            metadata: None,
+            timestamp: 5000,
+        }];
 
         runner.process_events(&events).await.unwrap();
 
@@ -1173,28 +1524,32 @@ mod tests {
     #[tokio::test]
     async fn test_projection_runner_skips_already_processed_events() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> = 
-            StorageBackendProjectionStore::new(InMemoryStorage::new(), "CounterProjection".to_string());
-        
+        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+            StorageBackendProjectionStore::new(
+                InMemoryStorage::new(),
+                "CounterProjection".to_string(),
+            );
+
         let runner = ProjectionRunner::new(storage, CounterProjection, store);
 
         // First batch
-        let events1 = vec![
-            EventRecord {
-                position: 1,
-                event_id: "evt-1".to_string(),
-                event: DomainEvent {
-                    event_type: "CounterIncremented".to_string(),
-                    data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
-                },
-                metadata: None,
-                timestamp: 1000,
+        let events1 = vec![EventRecord {
+            position: 1,
+            event_id: "evt-1".to_string(),
+            event: DomainEvent {
+                event_type: "CounterIncremented".to_string(),
+                data: "{}".to_string(),
+                tags: vec![Tag {
+                    key: "counter_id".to_string(),
+                    value: "counter-1".to_string(),
+                }],
             },
-        ];
+            metadata: None,
+            timestamp: 1000,
+        }];
 
         runner.process_events(&events1).await.unwrap();
-        
+
         // Second batch includes the same event plus a new one
         let events2 = vec![
             EventRecord {
@@ -1203,7 +1558,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 1000,
@@ -1214,7 +1572,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 2000,
@@ -1231,9 +1592,12 @@ mod tests {
     #[tokio::test]
     async fn test_projection_runner_filters_by_event_type() {
         let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> = 
-            StorageBackendProjectionStore::new(InMemoryStorage::new(), "CounterProjection".to_string());
-        
+        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+            StorageBackendProjectionStore::new(
+                InMemoryStorage::new(),
+                "CounterProjection".to_string(),
+            );
+
         let runner = ProjectionRunner::new(storage, CounterProjection, store);
 
         let events = vec![
@@ -1243,7 +1607,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 1000,
@@ -1252,9 +1619,12 @@ mod tests {
                 position: 2,
                 event_id: "evt-2".to_string(),
                 event: DomainEvent {
-                    event_type: "SomeOtherEvent".to_string(),  // Different event type
+                    event_type: "SomeOtherEvent".to_string(), // Different event type
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 2000,
@@ -1265,7 +1635,10 @@ mod tests {
                 event: DomainEvent {
                     event_type: "CounterIncremented".to_string(),
                     data: "{}".to_string(),
-                    tags: vec![Tag { key: "counter_id".to_string(), value: "counter-1".to_string() }],
+                    tags: vec![Tag {
+                        key: "counter_id".to_string(),
+                        value: "counter-1".to_string(),
+                    }],
                 },
                 metadata: None,
                 timestamp: 3000,
@@ -1310,21 +1683,22 @@ mod tests {
         }
 
         fn key_selector(&self, event: &EventRecord) -> Option<String> {
-            event.event.tags.iter()
+            event
+                .event
+                .tags
+                .iter()
                 .find(|t| t.key == "orderId")
                 .map(|t| t.value.clone())
         }
 
         fn apply(&self, state: Option<Self::State>, event: &EventRecord) -> Option<Self::State> {
             match event.event.event_type.as_str() {
-                "OrderCreated" => {
-                    Some(OrderSummary {
-                        order_id: self.key_selector(event).unwrap_or_default(),
-                        customer_name: event.event.data.clone(),
-                        total_amount: 0.0,
-                        item_count: 0,
-                    })
-                }
+                "OrderCreated" => Some(OrderSummary {
+                    order_id: self.key_selector(event).unwrap_or_default(),
+                    customer_name: event.event.data.clone(),
+                    total_amount: 0.0,
+                    item_count: 0,
+                }),
                 "ItemAdded" => {
                     if let Some(mut current) = state {
                         let price: f64 = event.event.data.parse().unwrap_or(0.0);
@@ -1364,9 +1738,21 @@ mod tests {
         assert_eq!(projection.projection_name(), "OrderSummary");
         let query = projection.event_types();
         assert_eq!(query.items[0].event_types.len(), 3);
-        assert!(query.items[0].event_types.contains(&"OrderCreated".to_string()));
-        assert!(query.items[0].event_types.contains(&"ItemAdded".to_string()));
-        assert!(query.items[0].event_types.contains(&"OrderCancelled".to_string()));
+        assert!(
+            query.items[0]
+                .event_types
+                .contains(&"OrderCreated".to_string())
+        );
+        assert!(
+            query.items[0]
+                .event_types
+                .contains(&"ItemAdded".to_string())
+        );
+        assert!(
+            query.items[0]
+                .event_types
+                .contains(&"OrderCancelled".to_string())
+        );
     }
 
     #[test]

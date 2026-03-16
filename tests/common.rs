@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
-use std::string::{String, ToString};
-use std::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use marmosa::ports::{Clock, Error, StorageBackend};
+use std::collections::{BTreeMap, BTreeSet};
 use std::format;
-use marmosa::ports::{StorageBackend, Clock, Error};
+use std::string::{String, ToString};
+use std::sync::Mutex;
+use std::vec::Vec;
 
 pub struct InMemoryStorage {
     files: Mutex<BTreeMap<String, Vec<u8>>>,
@@ -27,13 +27,21 @@ impl StorageBackend for InMemoryStorage {
         self.dirs.lock().unwrap().insert(path.to_string(), ());
         Ok(())
     }
-    
+
     async fn read_file(&self, path: &str) -> Result<Vec<u8>, Error> {
-        self.files.lock().unwrap().get(path).cloned().ok_or(Error::NotFound)
+        self.files
+            .lock()
+            .unwrap()
+            .get(path)
+            .cloned()
+            .ok_or(Error::NotFound)
     }
-    
+
     async fn write_file(&self, path: &str, data: &[u8]) -> Result<(), Error> {
-        self.files.lock().unwrap().insert(path.to_string(), data.to_vec());
+        self.files
+            .lock()
+            .unwrap()
+            .insert(path.to_string(), data.to_vec());
         Ok(())
     }
 
@@ -45,11 +53,15 @@ impl StorageBackend for InMemoryStorage {
             Err(Error::NotFound)
         }
     }
-    
+
     async fn read_dir(&self, path: &str) -> Result<Vec<String>, Error> {
         let files = self.files.lock().unwrap();
         let mut result = Vec::new();
-        let prefix = if path.ends_with('/') { path.to_string() } else { format!("{}/", path) };
+        let prefix = if path.ends_with('/') {
+            path.to_string()
+        } else {
+            format!("{}/", path)
+        };
         for k in files.keys() {
             if k.starts_with(&prefix) {
                 let file_name = k.strip_prefix(&prefix).unwrap();
@@ -82,7 +94,9 @@ pub struct FakeClock {
 
 impl FakeClock {
     pub fn new(start: u64) -> Self {
-        Self { time: AtomicU64::new(start) }
+        Self {
+            time: AtomicU64::new(start),
+        }
     }
 }
 
