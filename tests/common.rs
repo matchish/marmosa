@@ -84,6 +84,8 @@ impl FakeClock {
     pub fn new(start: u64) -> Self {
         Self { time: AtomicU64::new(start) }
     }
+    
+    #[allow(dead_code)]
     pub fn advance(&self, millis: u64) {
         self.time.fetch_add(millis, Ordering::SeqCst);
     }
