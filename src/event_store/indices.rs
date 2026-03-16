@@ -255,7 +255,6 @@ mod tests {
     use crate::event_store::*;
     use crate::ports::tests::InMemoryStorage;
 
-    #[allow(dead_code)]
     fn create_test_event(
         position: u64,
         event_type: &str,

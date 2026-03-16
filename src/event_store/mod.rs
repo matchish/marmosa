@@ -152,7 +152,6 @@ mod tests {
     use crate::domain::{DomainEvent, EventRecord, Tag};
     use crate::ports::tests::{FakeClock, InMemoryStorage};
 
-    #[allow(dead_code)]
     fn create_test_event(
         position: u64,
         event_type: &str,
@@ -171,7 +170,6 @@ mod tests {
         }
     }
 
-    #[allow(dead_code)]
     fn create_test_event_record(position: u64, event_type: &str, tags: Vec<Tag>) -> EventRecord {
         EventRecord {
             position,
@@ -418,3 +416,4 @@ mod tests {
     }
 }
 
+pub mod read_tests;
