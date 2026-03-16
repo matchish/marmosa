@@ -21,6 +21,11 @@ pub trait EventStoreExt {
         &self,
         query: Query,
     ) -> impl core::future::Future<Output = Result<Vec<EventRecord>, Error>> + Send;
+
+    fn read_last_async(
+        &self,
+        query: Query,
+    ) -> impl core::future::Future<Output = Result<Option<EventRecord>, Error>> + Send;
 }
 
 impl<T: EventStore + Send + Sync> EventStoreExt for T {
@@ -34,6 +39,16 @@ impl<T: EventStore + Send + Sync> EventStoreExt for T {
 
     async fn read_all_async(&self, query: Query) -> Result<Vec<EventRecord>, Error> {
         self.read_async(query, None, None, None).await
+    }
+
+    async fn read_last_async(&self, query: Query) -> Result<Option<EventRecord>, Error> {
+        let events = self.read_async(
+            query,
+            None,
+            Some(1),
+            Some(alloc::vec![crate::domain::ReadOption::DESCENDING]),
+        ).await?;
+        Ok(events.into_iter().next())
     }
 }
 
