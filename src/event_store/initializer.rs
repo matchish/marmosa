@@ -101,6 +101,7 @@ impl<S: crate::ports::StorageBackend> StorageInitializer<S> {
 
 #[cfg(test)]
 mod tests {
+    use crate::ports::StorageBackend;
     use super::*;
     use crate::ports::tests::InMemoryStorage;
 
