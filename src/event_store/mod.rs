@@ -32,6 +32,7 @@ pub trait EventStore {
         query: Query,
         start_position: Option<u64>,
         max_count: Option<usize>,
+        options: Option<Vec<crate::domain::ReadOption>>,
     ) -> impl core::future::Future<Output = Result<Vec<EventRecord>, Error>> + Send;
 }
 
@@ -54,6 +55,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
         query: Query,
         start_position: Option<u64>,
         max_count: Option<usize>,
+        options: Option<Vec<crate::domain::ReadOption>>,
     ) -> Result<Vec<EventRecord>, Error> {
         let dir_path = "Events";
         let mut results = Vec::new();
@@ -62,8 +64,21 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
         let total_count = sequence_files.len() as u64;
 
         let start = start_position.map(|p| p + 1).unwrap_or(0); // Exclusive bound
+        
+        let descending_opt = crate::domain::ReadOption::DESCENDING;
+        let is_descending = options.as_ref().map_or(false, |opts| opts.contains(&descending_opt));
 
-        for current_pos in start..total_count {
+        let positions: alloc::boxed::Box<dyn Iterator<Item = u64> + Send> = if is_descending {
+            if total_count >= start {
+                alloc::boxed::Box::new((start..total_count).rev())
+            } else {
+                alloc::boxed::Box::new(core::iter::empty())
+            }
+        } else {
+            alloc::boxed::Box::new(start..total_count)
+        };
+
+        for current_pos in positions {
             let file_path = format!("{}/{:010}.json", dir_path, current_pos);
             let data = self.storage.read_file(&file_path).await?;
             let (record, _) =
@@ -102,7 +117,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
             if let Some(cond) = condition {
                 // Read all current events to check against condition
                 let current_events = self
-                    .read_internal(Query::all(), cond.after_sequence_position, None)
+                    .read_internal(Query::all(), cond.after_sequence_position, None, None)
                     .await?;
                 for evt in current_events {
                     if cond.fail_if_events_match.matches(&evt) {
@@ -143,8 +158,9 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
         query: Query,
         start_position: Option<u64>,
         max_count: Option<usize>,
+        options: Option<Vec<crate::domain::ReadOption>>,
     ) -> Result<Vec<EventRecord>, Error> {
-        self.read_internal(query, start_position, max_count).await
+        self.read_internal(query, start_position, max_count, options).await
     }
 }
 
@@ -192,7 +208,7 @@ mod tests {
         store.append_async(vec![event1], None).await.unwrap();
 
         let events = store
-            .read_async(Query::all(), None, Some(10))
+            .read_async(Query::all(), None, Some(10), None)
             .await
             .unwrap();
         assert_eq!(events.len(), 1);
@@ -335,7 +351,7 @@ mod tests {
 
         store.append_async(events, None).await.unwrap();
 
-        let result = store.read_async(Query::all(), None, None).await.unwrap();
+        let result = store.read_async(Query::all(), None, None, None).await.unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].position, 0);
         assert_eq!(result[1].position, 1);
@@ -407,7 +423,7 @@ mod tests {
         }];
         store.append_async(batch2, None).await.unwrap();
 
-        let result = store.read_async(Query::all(), None, None).await.unwrap();
+        let result = store.read_async(Query::all(), None, None, None).await.unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].position, 0);
         assert_eq!(result[1].position, 1);
@@ -435,7 +451,7 @@ mod tests {
                 .unwrap();
         }
 
-        let events = store.read_async(Query::all(), None, None).await.unwrap();
+        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].position, 0);
         assert_eq!(events[1].position, 1);
@@ -471,7 +487,7 @@ mod tests {
             }]),
         };
 
-        let events = store.read_async(query, None, None).await.unwrap();
+        let events = store.read_async(query, None, None, None).await.unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event.event_type, "OrderCreated");
         assert_eq!(events[1].event.event_type, "OrderCreated");
@@ -517,7 +533,7 @@ mod tests {
             }]),
         };
 
-        let events = store.read_async(query, None, None).await.unwrap();
+        let events = store.read_async(query, None, None, None).await.unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].position, 0);
         assert_eq!(events[1].position, 2);
@@ -545,7 +561,7 @@ mod tests {
                 .unwrap();
         }
 
-        let events = store.read_async(Query::all(), Some(1), None).await.unwrap();
+        let events = store.read_async(Query::all(), Some(1), None, None).await.unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].position, 2);
         assert_eq!(events[1].position, 3);

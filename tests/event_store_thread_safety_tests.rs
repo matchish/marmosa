@@ -56,7 +56,7 @@ async fn concurrent_appends_serialized_execution_all_events_stored() {
         task.await.unwrap();
     }
 
-    let all_events = store.read_async(Query::all(), None, None).await.unwrap();
+    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
     assert_eq!(all_events.len(), append_count * events_per_append);
 
     let mut positions: Vec<u64> = all_events.iter().map(|e| e.position).collect();
@@ -104,7 +104,7 @@ async fn concurrent_reads_during_writes_eventually_consistent() {
         let task = tokio::spawn(async move {
             let mut local_results = Vec::new();
             while completed_counter.load(Ordering::SeqCst) < write_count {
-                let events = store_clone.read_async(Query::all(), None, None).await.unwrap();
+                let events = store_clone.read_async(Query::all(), None, None, None).await.unwrap();
                 local_results.push(events.len());
                 // tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
             }
@@ -123,7 +123,7 @@ async fn concurrent_reads_during_writes_eventually_consistent() {
         all_read_results.extend(results);
     }
 
-    let final_events = store.read_async(Query::all(), None, None).await.unwrap();
+    let final_events = store.read_async(Query::all(), None, None, None).await.unwrap();
     assert_eq!(final_events.len(), write_count);
 
     all_read_results.sort();
@@ -158,7 +158,7 @@ async fn concurrent_appends_with_optimistic_concurrency_detects_conflicts() {
         }],
     };
 
-    let initial_events = store.read_async(query.clone(), None, None).await.unwrap();
+    let initial_events = store.read_async(query.clone(), None, None, None).await.unwrap();
     let initial_position = initial_events.last().unwrap().position;
 
     let success_count = Arc::new(AtomicUsize::new(0));
@@ -200,7 +200,7 @@ async fn concurrent_appends_with_optimistic_concurrency_detects_conflicts() {
     assert_eq!(success_count.load(Ordering::SeqCst), 1);
     assert_eq!(failure_count.load(Ordering::SeqCst), 9);
 
-    let final_events = store.read_async(query, None, None).await.unwrap();
+    let final_events = store.read_async(query, None, None, None).await.unwrap();
     assert_eq!(final_events.len(), 2); // Initial + one update
 }
 
@@ -235,7 +235,7 @@ async fn stress_test_high_concurrent_load_maintains_integrity() {
         task.await.unwrap();
     }
 
-    let all_events = store.read_async(Query::all(), None, None).await.unwrap();
+    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
     assert_eq!(all_events.len(), total_events);
 
     let mut positions: Vec<u64> = all_events.iter().map(|e| e.position).collect();
@@ -253,7 +253,7 @@ async fn stress_test_high_concurrent_load_maintains_integrity() {
                 }],
             }],
         };
-        let entity_events = store.read_async(q, None, None).await.unwrap();
+        let entity_events = store.read_async(q, None, None, None).await.unwrap();
         assert_eq!(entity_events.len(), events_per_entity);
     }
 }
@@ -302,7 +302,7 @@ async fn concurrent_appends_to_multiple_contexts_isolated() {
             tags: vec![Tag { key: "context".to_string(), value: "context1".to_string() }],
         }],
     };
-    let ctx1_events = store.read_async(q1, None, None).await.unwrap();
+    let ctx1_events = store.read_async(q1, None, None, None).await.unwrap();
     
     let q2 = Query {
         items: vec![QueryItem {
@@ -310,7 +310,7 @@ async fn concurrent_appends_to_multiple_contexts_isolated() {
             tags: vec![Tag { key: "context".to_string(), value: "context2".to_string() }],
         }],
     };
-    let ctx2_events = store.read_async(q2, None, None).await.unwrap();
+    let ctx2_events = store.read_async(q2, None, None, None).await.unwrap();
 
     assert_eq!(ctx1_events.len(), events_per_context);
     assert_eq!(ctx2_events.len(), events_per_context);
@@ -345,7 +345,7 @@ async fn concurrent_query_by_event_type_returns_consistent_results() {
                     tags: vec![],
                 }],
             };
-            store_clone.read_async(q, None, None).await.unwrap().len()
+            store_clone.read_async(q, None, None, None).await.unwrap().len()
         });
         query_tasks.push(task);
     }
@@ -411,6 +411,6 @@ async fn concurrent_append_with_fail_if_match_serializes_correctly() {
             ],
         }],
     };
-    let first_login_events = store.read_async(q, None, None).await.unwrap();
+    let first_login_events = store.read_async(q, None, None, None).await.unwrap();
     assert_eq!(first_login_events.len(), 1);
 }

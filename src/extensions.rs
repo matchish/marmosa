@@ -33,7 +33,7 @@ impl<T: EventStore + Send + Sync> EventStoreExt for T {
     }
 
     async fn read_all_async(&self, query: Query) -> Result<Vec<EventRecord>, Error> {
-        self.read_async(query, None, None).await
+        self.read_async(query, None, None, None).await
     }
 }
 

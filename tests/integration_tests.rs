@@ -97,7 +97,7 @@ async fn test_eventstore_projections_end_to_end() {
     store.append_async(vec![event2], None).await.unwrap();
 
     // Read events to feed to runner
-    let all_events = store.read_async(Query::all(), None, None).await.unwrap();
+    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
 
     // 2. Run projection from scratch
     runner.process_events(&all_events).await.unwrap();
@@ -133,7 +133,7 @@ async fn test_eventstore_projections_end_to_end() {
     let checkpoint = runner.get_checkpoint().await.unwrap();
     let start_pos = checkpoint.map(|c| c.last_position);
     let new_events = store
-        .read_async(Query::all(), start_pos, None)
+        .read_async(Query::all(), start_pos, None, None)
         .await
         .unwrap();
 

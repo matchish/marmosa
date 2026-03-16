@@ -46,7 +46,7 @@ async fn read_async_without_from_position_returns_all_events() {
     append_order_async(&store, "o2").await; // pos 1
     append_order_async(&store, "o3").await; // pos 2
 
-    let events = store.read_async(Query::all(), None, None).await.unwrap();
+    let events = store.read_async(Query::all(), None, None, None).await.unwrap();
     assert_eq!(events.len(), 3);
 }
 
@@ -58,7 +58,7 @@ async fn read_async_with_from_position_returns_only_events_after_that_position()
     }
 
     // Request only events after position 2 (should return 3 and 4)
-    let events = store.read_async(Query::all(), Some(2), None).await.unwrap();
+    let events = store.read_async(Query::all(), Some(2), None, None).await.unwrap();
     
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].position, 3);
@@ -74,10 +74,10 @@ async fn read_async_with_from_position_at_last_event_returns_empty() {
     append_order_async(&store, "o2").await;
     append_order_async(&store, "o3").await;
 
-    let all_events = store.read_async(Query::all(), None, None).await.unwrap();
+    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
     let last_position = all_events.iter().map(|e| e.position).max().unwrap();
 
-    let events = store.read_async(Query::all(), Some(last_position), None).await.unwrap();
+    let events = store.read_async(Query::all(), Some(last_position), None, None).await.unwrap();
     assert!(events.is_empty());
 }
 
@@ -98,7 +98,7 @@ async fn read_async_with_from_position_and_event_type_filter_returns_only_matchi
     };
 
     // After pos 1, we only want OrderEvents -> should be at pos 2 and 4
-    let events = store.read_async(query, Some(1), None).await.unwrap();
+    let events = store.read_async(query, Some(1), None, None).await.unwrap();
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].position, 2);
@@ -124,7 +124,7 @@ async fn read_async_with_from_position_and_tag_filter_returns_only_matching_tags
     };
 
     // After pos 0 -> should return pos 2 and 3
-    let events = store.read_async(query, Some(0), None).await.unwrap();
+    let events = store.read_async(query, Some(0), None, None).await.unwrap();
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].position, 2);
@@ -139,7 +139,7 @@ async fn read_async_can_poll_incrementally_simulating_projection_daemon() {
     append_order_async(&store, "o1").await; // pos 0
     append_order_async(&store, "o2").await; // pos 1
 
-    let first_batch = store.read_async(Query::all(), None, None).await.unwrap();
+    let first_batch = store.read_async(Query::all(), None, None, None).await.unwrap();
     assert_eq!(first_batch.len(), 2);
 
     let checkpoint = first_batch.iter().map(|e| e.position).max().unwrap_or(0); // 1
@@ -148,7 +148,7 @@ async fn read_async_can_poll_incrementally_simulating_projection_daemon() {
     append_order_async(&store, "o3").await; // pos 2
     append_order_async(&store, "o4").await; // pos 3
 
-    let second_batch = store.read_async(Query::all(), Some(checkpoint), None).await.unwrap();
+    let second_batch = store.read_async(Query::all(), Some(checkpoint), None, None).await.unwrap();
     assert_eq!(second_batch.len(), 2);
     assert_eq!(second_batch[0].position, 2);
     assert_eq!(second_batch[1].position, 3);
@@ -161,7 +161,7 @@ async fn read_async_with_from_position_extension_method_returns_only_events_afte
     append_order_async(&store, "o2").await; // pos 1
     append_order_async(&store, "o3").await; // pos 2
 
-    let events = store.read_async(Query::all(), Some(0), None).await.unwrap();
+    let events = store.read_async(Query::all(), Some(0), None, None).await.unwrap();
 
     assert_eq!(events.len(), 2);
     assert_eq!(events[0].position, 1);
