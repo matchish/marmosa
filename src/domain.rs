@@ -120,7 +120,6 @@ impl core::str::FromStr for ReadOption {
     }
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct CommandResult {
     pub success: bool,
@@ -129,7 +128,10 @@ pub struct CommandResult {
 
 impl CommandResult {
     pub fn new(success: bool, error_message: Option<String>) -> Self {
-        Self { success, error_message }
+        Self {
+            success,
+            error_message,
+        }
     }
 
     pub fn ok() -> Self {
@@ -156,7 +158,11 @@ pub struct CommandResultWith<T> {
 
 impl<T> CommandResultWith<T> {
     pub fn new(success: bool, value: Option<T>, error_message: Option<String>) -> Self {
-        Self { success, value, error_message }
+        Self {
+            success,
+            value,
+            error_message,
+        }
     }
 
     pub fn ok(value: T) -> Self {
@@ -314,7 +320,6 @@ mod tests {
         assert_eq!(ReadOption::DESCENDING, descending);
     }
 
-    
     #[test]
     fn command_result_constructor_sets_properties_correctly() {
         let result = CommandResult::new(true, Some(String::from("Test error")));
@@ -366,7 +371,11 @@ mod tests {
 
     #[test]
     fn command_result_generic_constructor_sets_properties_correctly() {
-        let result = CommandResultWith::new(true, Some(String::from("test")), Some(String::from("Error")));
+        let result = CommandResultWith::new(
+            true,
+            Some(String::from("test")),
+            Some(String::from("Error")),
+        );
         assert!(result.success);
         assert_eq!(result.value, Some(String::from("test")));
         assert_eq!(result.error_message, Some(String::from("Error")));
@@ -391,7 +400,10 @@ mod tests {
 
     #[test]
     fn command_result_generic_with_complex_type_stores_value_correctly() {
-        let test_object = TestData { id: 42, name: String::from("Test") };
+        let test_object = TestData {
+            id: 42,
+            name: String::from("Test"),
+        };
         let result = CommandResultWith::ok(test_object.clone());
         assert!(result.success);
         assert_eq!(result.value, Some(test_object));
@@ -420,11 +432,21 @@ mod tests {
 
     #[test]
     fn command_result_generic_with_list_works_correctly() {
-        let list = alloc::vec![String::from("Item1"), String::from("Item2"), String::from("Item3")];
+        let list = alloc::vec![
+            String::from("Item1"),
+            String::from("Item2"),
+            String::from("Item3")
+        ];
         let result = CommandResultWith::ok(list);
         assert!(result.success);
         assert_eq!(result.value.as_ref().unwrap().len(), 3);
-        assert!(result.value.as_ref().unwrap().contains(&String::from("Item2")));
+        assert!(
+            result
+                .value
+                .as_ref()
+                .unwrap()
+                .contains(&String::from("Item2"))
+        );
     }
 
     #[test]
@@ -450,14 +472,20 @@ mod tests {
 
         let fail_result = execute_command(false);
         assert!(!fail_result.success);
-        assert_eq!(fail_result.error_message, Some(String::from("Command execution failed")));
+        assert_eq!(
+            fail_result.error_message,
+            Some(String::from("Command execution failed"))
+        );
     }
 
     #[test]
     fn command_result_generic_typical_usage_pattern_works_as_expected() {
         fn execute_query(should_succeed: bool) -> CommandResultWith<alloc::vec::Vec<String>> {
             if should_succeed {
-                CommandResultWith::ok(alloc::vec![String::from("Result1"), String::from("Result2")])
+                CommandResultWith::ok(alloc::vec![
+                    String::from("Result1"),
+                    String::from("Result2")
+                ])
             } else {
                 CommandResultWith::fail("Query execution failed")
             }
@@ -470,10 +498,13 @@ mod tests {
         let fail_result = execute_query(false);
         assert!(!fail_result.success);
         assert_eq!(fail_result.value, None);
-        assert_eq!(fail_result.error_message, Some(String::from("Query execution failed")));
+        assert_eq!(
+            fail_result.error_message,
+            Some(String::from("Query execution failed"))
+        );
     }
 
-#[test]
+    #[test]
     fn test_event_data_deserialization_no_alloc() {
         let json = br#"{"event_id":"id1","event":{"event_type":"type1","data":"{}","tags":[]},"metadata":null}"#;
         let (parsed, _): (EventData, _) = from_slice(json).unwrap();

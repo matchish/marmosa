@@ -67,7 +67,7 @@ impl ProjectionOptionsValidator {
         if options.rebuild_batch_size > 1_000_000 {
             failures.push("Rebuild batch size must be at most 1,000,000".to_string());
         }
-        
+
         if failures.is_empty() {
             Ok(())
         } else {
@@ -87,7 +87,10 @@ mod tests {
         assert_eq!(options.batch_size, 1000);
         assert_eq!(options.rebuild_flush_interval, 10_000);
         assert_eq!(options.rebuild_batch_size, 5_000);
-        assert_eq!(options.auto_rebuild, AutoRebuildMode::MissingCheckpointsOnly);
+        assert_eq!(
+            options.auto_rebuild,
+            AutoRebuildMode::MissingCheckpointsOnly
+        );
         assert_eq!(options.max_concurrent_rebuilds, 4);
     }
 
@@ -169,7 +172,12 @@ mod tests {
             };
             let result = ProjectionOptionsValidator::validate(&options);
             assert!(result.is_err());
-            assert!(result.unwrap_err().iter().any(|f| f.contains("at least 100ms")));
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|f| f.contains("at least 100ms"))
+            );
         }
     }
 
@@ -181,7 +189,12 @@ mod tests {
         };
         let result = ProjectionOptionsValidator::validate(&options);
         assert!(result.is_err());
-        assert!(result.unwrap_err().iter().any(|f| f.contains("at most 1 hour")));
+        assert!(
+            result
+                .unwrap_err()
+                .iter()
+                .any(|f| f.contains("at most 1 hour"))
+        );
     }
 
     #[test]
@@ -214,7 +227,12 @@ mod tests {
         };
         let result = ProjectionOptionsValidator::validate(&options);
         assert!(result.is_err());
-        assert!(result.unwrap_err().iter().any(|f| f.contains("at most 100,000")));
+        assert!(
+            result
+                .unwrap_err()
+                .iter()
+                .any(|f| f.contains("at most 100,000"))
+        );
     }
 
     #[test]
@@ -272,7 +290,12 @@ mod tests {
             };
             let result = ProjectionOptionsValidator::validate(&options);
             assert!(result.is_err());
-            assert!(result.unwrap_err().iter().any(|f| f.contains("at least 100")));
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|f| f.contains("at least 100"))
+            );
         }
     }
 
@@ -284,7 +307,12 @@ mod tests {
         };
         let result = ProjectionOptionsValidator::validate(&options);
         assert!(result.is_err());
-        assert!(result.unwrap_err().iter().any(|f| f.contains("at most 1,000,000")));
+        assert!(
+            result
+                .unwrap_err()
+                .iter()
+                .any(|f| f.contains("at most 1,000,000"))
+        );
     }
 
     #[test]
@@ -296,7 +324,12 @@ mod tests {
             };
             let result = ProjectionOptionsValidator::validate(&options);
             assert!(result.is_err());
-            assert!(result.unwrap_err().iter().any(|f| f.contains("at least 100")));
+            assert!(
+                result
+                    .unwrap_err()
+                    .iter()
+                    .any(|f| f.contains("at least 100"))
+            );
         }
     }
 
@@ -308,6 +341,11 @@ mod tests {
         };
         let result = ProjectionOptionsValidator::validate(&options);
         assert!(result.is_err());
-        assert!(result.unwrap_err().iter().any(|f| f.contains("at most 1,000,000")));
+        assert!(
+            result
+                .unwrap_err()
+                .iter()
+                .any(|f| f.contains("at most 1,000,000"))
+        );
     }
 }

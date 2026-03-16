@@ -178,7 +178,7 @@ mod tests {
         let manager = LedgerManager::new(storage.clone());
         let _ = storage.create_dir_all("/temp").await;
         let _ = storage.write_file("/temp/.ledger", b"").await;
-        
+
         let pos = manager
             .get_last_sequence_position_async("/temp")
             .await
@@ -247,12 +247,12 @@ mod tests {
     async fn ledger_update_sequence_position_with_zero_succeeds() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let manager = LedgerManager::new(storage.clone());
-        
+
         manager
             .update_sequence_position_async("/temp", 0)
             .await
             .unwrap();
-            
+
         let pos = manager
             .get_last_sequence_position_async("/temp")
             .await
@@ -291,25 +291,43 @@ mod tests {
         let manager = LedgerManager::new(storage.clone());
 
         // Initial state
-        let pos1 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        let pos1 = manager
+            .get_next_sequence_position_async("/temp")
+            .await
+            .unwrap();
         assert_eq!(pos1, 1);
 
         // Update to position 1
-        manager.update_sequence_position_async("/temp", 1).await.unwrap();
+        manager
+            .update_sequence_position_async("/temp", 1)
+            .await
+            .unwrap();
 
         // Next should be 2
-        let pos2 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        let pos2 = manager
+            .get_next_sequence_position_async("/temp")
+            .await
+            .unwrap();
         assert_eq!(pos2, 2);
 
         // Update to position 2
-        manager.update_sequence_position_async("/temp", 2).await.unwrap();
+        manager
+            .update_sequence_position_async("/temp", 2)
+            .await
+            .unwrap();
 
         // Next should be 3
-        let pos3 = manager.get_next_sequence_position_async("/temp").await.unwrap();
+        let pos3 = manager
+            .get_next_sequence_position_async("/temp")
+            .await
+            .unwrap();
         assert_eq!(pos3, 3);
 
         // Last should be 2
-        let last = manager.get_last_sequence_position_async("/temp").await.unwrap();
+        let last = manager
+            .get_last_sequence_position_async("/temp")
+            .await
+            .unwrap();
         assert_eq!(last, 2);
     }
 
@@ -319,8 +337,14 @@ mod tests {
         let manager1 = LedgerManager::new(storage.clone());
         let manager2 = LedgerManager::new(storage.clone());
 
-        manager1.update_sequence_position_async("/temp", 100).await.unwrap();
-        let position = manager2.get_last_sequence_position_async("/temp").await.unwrap();
+        manager1
+            .update_sequence_position_async("/temp", 100)
+            .await
+            .unwrap();
+        let position = manager2
+            .get_last_sequence_position_async("/temp")
+            .await
+            .unwrap();
 
         assert_eq!(position, 100);
     }
@@ -329,14 +353,22 @@ mod tests {
     async fn ledger_file_has_correct_format() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let manager = LedgerManager::new(storage.clone());
-        
-        manager.update_sequence_position_async("/temp", 42).await.unwrap();
-        
+
+        manager
+            .update_sequence_position_async("/temp", 42)
+            .await
+            .unwrap();
+
         let content = storage.read_file("/temp/.ledger").await.unwrap();
         let content_str = core::str::from_utf8(&content).unwrap();
-        
+
         // Ensure the fields are as expected in JSON
-        assert!(content_str.contains("LastSequencePosition") || content_str.contains("last_sequence_position") || content_str.contains("LastSequencePosition") || content_str.contains("lastSequencePosition"));
+        assert!(
+            content_str.contains("LastSequencePosition")
+                || content_str.contains("last_sequence_position")
+                || content_str.contains("LastSequencePosition")
+                || content_str.contains("lastSequencePosition")
+        );
         assert!(content_str.contains("42"));
     }
 

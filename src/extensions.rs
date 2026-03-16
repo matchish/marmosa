@@ -1,12 +1,107 @@
-
 use alloc::collections::BTreeMap;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::borrow::Borrow;
 
 use crate::domain::EventRecord;
 
+use crate::domain::{AppendCondition, EventData, Query};
 /// Extension trait for iterators to build projections from events.
+use crate::event_store::EventStore;
+use crate::ports::Error;
+
+pub trait EventStoreExt {
+    fn append_single_async(
+        &self,
+        event: EventData,
+        condition: Option<AppendCondition>,
+    ) -> impl core::future::Future<Output = Result<(), Error>> + Send;
+
+    fn read_all_async(
+        &self,
+        query: Query,
+    ) -> impl core::future::Future<Output = Result<Vec<EventRecord>, Error>> + Send;
+}
+
+impl<T: EventStore + Send + Sync> EventStoreExt for T {
+    async fn append_single_async(
+        &self,
+        event: EventData,
+        condition: Option<AppendCondition>,
+    ) -> Result<(), Error> {
+        self.append_async(alloc::vec![event], condition).await
+    }
+
+    async fn read_all_async(&self, query: Query) -> Result<Vec<EventRecord>, Error> {
+        self.read_async(query, None, None).await
+    }
+}
+
+pub struct DomainEventBuilder {
+    event_type: String,
+    data: String,
+    tags: Vec<crate::domain::Tag>,
+    metadata: Option<String>,
+}
+
+impl DomainEventBuilder {
+    pub fn new(event_type: &str, data: &str) -> Self {
+        Self {
+            event_type: event_type.to_string(),
+            data: data.to_string(),
+            tags: alloc::vec::Vec::new(),
+            metadata: None,
+        }
+    }
+
+    pub fn with_tag(mut self, key: &str, value: &str) -> Self {
+        self.tags.push(crate::domain::Tag {
+            key: key.to_string(),
+            value: value.to_string(),
+        });
+        self
+    }
+
+    pub fn with_tags(mut self, tags: Vec<crate::domain::Tag>) -> Self {
+        self.tags.extend(tags);
+        self
+    }
+
+    pub fn with_metadata(mut self, metadata: &str) -> Self {
+        self.metadata = Some(metadata.to_string());
+        self
+    }
+
+    pub fn build(self, event_id: &str) -> crate::domain::EventData {
+        crate::domain::EventData {
+            event_id: event_id.to_string(),
+            event: crate::domain::DomainEvent {
+                event_type: self.event_type,
+                data: self.data,
+                tags: self.tags,
+            },
+            metadata: self.metadata,
+        }
+    }
+}
+
+pub trait ToDomainEventExt {
+    fn to_domain_event(&self) -> DomainEventBuilder;
+}
+
+impl<T: serde::Serialize> ToDomainEventExt for T {
+    fn to_domain_event(&self) -> DomainEventBuilder {
+        let type_name = core::any::type_name::<T>()
+            .split("::")
+            .last()
+            .unwrap_or("UnknownType");
+        let data = serde_json_core::to_vec::<_, 4096>(self)
+            .map(|v| alloc::string::String::from_utf8(v.to_vec()).unwrap_or_else(|_| alloc::string::String::from("{}")))
+            .unwrap_or_else(|_| alloc::string::String::from("{}"));
+        DomainEventBuilder::new(type_name, &data)
+    }
+}
+
 pub trait BuildProjectionsExt: Iterator {
     /// Builds projections by applying events grouped by a derived key.
     fn build_projections<TState, K, F>(self, key_selector: K, apply_event: F) -> Vec<TState>
@@ -46,8 +141,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::ToString;
     use crate::domain::{DomainEvent, Tag};
+    use alloc::string::ToString;
 
     #[derive(Debug, Clone, PartialEq)]
     struct StudentProjection {
@@ -64,27 +159,32 @@ mod tests {
                     let parts: Vec<&str> = event.event.data.split('|').collect();
                     let name = parts.get(0).copied().unwrap_or("").to_string();
                     let email = parts.get(1).copied().unwrap_or("").to_string();
-                    let student_id = event.event.tags.iter().find(|t| t.key == "studentId").unwrap().value.clone();
+                    let student_id = event
+                        .event
+                        .tags
+                        .iter()
+                        .find(|t| t.key == "studentId")
+                        .unwrap()
+                        .value
+                        .clone();
                     Some(StudentProjection {
                         student_id,
                         name,
                         email,
                         course_count: 0,
                     })
-                },
-                "StudentEnrolledEvent" => {
-                    current.map(|mut c| {
-                        c.course_count += 1;
-                        c
-                    })
-                },
+                }
+                "StudentEnrolledEvent" => current.map(|mut c| {
+                    c.course_count += 1;
+                    c
+                }),
                 "StudentNameChangedEvent" => {
                     let new_name = event.event.data.clone();
                     current.map(|mut c| {
                         c.name = new_name;
                         c
                     })
-                },
+                }
                 _ => current,
             }
         }
@@ -97,7 +197,10 @@ mod tests {
             event: DomainEvent {
                 event_type: event_type.to_string(),
                 data: data.to_string(),
-                tags: alloc::vec![Tag { key: "studentId".to_string(), value: student_id.to_string() }],
+                tags: alloc::vec![Tag {
+                    key: "studentId".to_string(),
+                    value: student_id.to_string()
+                }],
             },
             metadata: None,
             timestamp: 1000,
@@ -113,7 +216,13 @@ mod tests {
         ];
 
         let projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             StudentProjection::apply,
         );
 
@@ -136,7 +245,13 @@ mod tests {
         ];
 
         let mut projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             StudentProjection::apply,
         );
 
@@ -145,7 +260,7 @@ mod tests {
         assert_eq!(projections.len(), 2);
         assert_eq!(projections[0].name, "Alice");
         assert_eq!(projections[0].course_count, 1);
-        
+
         assert_eq!(projections[1].name, "Bob");
         assert_eq!(projections[1].course_count, 2);
     }
@@ -161,7 +276,13 @@ mod tests {
         ];
 
         let projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             StudentProjection::apply,
         );
 
@@ -175,7 +296,13 @@ mod tests {
         let events: Vec<EventRecord> = alloc::vec![];
 
         let projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             StudentProjection::apply,
         );
 
@@ -185,12 +312,21 @@ mod tests {
     #[test]
     fn build_projections_handles_null_seed_state() {
         let s1 = "student-1";
-        let events = alloc::vec![
-            create_event(1, "StudentCreatedEvent", "Alice|alice@test.com", s1),
-        ];
+        let events = alloc::vec![create_event(
+            1,
+            "StudentCreatedEvent",
+            "Alice|alice@test.com",
+            s1
+        ),];
 
         let projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             |current, event| {
                 assert!(current.is_none());
                 StudentProjection::apply(current, event)
@@ -203,12 +339,21 @@ mod tests {
     #[test]
     fn build_projections_filters_out_null_projections() {
         let s1 = "student-1";
-        let events = alloc::vec![
-            create_event(1, "StudentCreatedEvent", "Alice|alice@test.com", s1),
-        ];
+        let events = alloc::vec![create_event(
+            1,
+            "StudentCreatedEvent",
+            "Alice|alice@test.com",
+            s1
+        ),];
 
         let projections = events.iter().build_projections::<StudentProjection, _, _>(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             |_, _| None, // Always return None
         );
 
@@ -228,7 +373,13 @@ mod tests {
         ];
 
         let mut projections = events.iter().build_projections(
-            |e| e.event.tags.iter().find(|t| t.key == "studentId").map(|t| t.value.clone()),
+            |e| {
+                e.event
+                    .tags
+                    .iter()
+                    .find(|t| t.key == "studentId")
+                    .map(|t| t.value.clone())
+            },
             StudentProjection::apply,
         );
 
@@ -239,4 +390,3 @@ mod tests {
         assert_eq!(projections[1].name, "Bob");
     }
 }
-

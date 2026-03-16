@@ -30,6 +30,46 @@
 			"type": "shell",
 			"command": "rm -f tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsTests.cs tests_opossum/Opossum.UnitTests/Projections/ProjectionOptionsValidationTests.cs && git add src/projections/options.rs src/projections.rs && git add -u tests_opossum/Opossum.UnitTests/Projections && git commit -m \"chore: Port C# ProjectionOptions tests to rust inline module\"",
 			"isBackground": false
+		},
+		{
+			"label": "update_extensions",
+			"type": "shell",
+			"command": "python3 update_extensions.py"
+		},
+		{
+			"label": "check_extensions",
+			"type": "shell",
+			"command": "cargo fmt && cargo check"
+		},
+		{
+			"label": "check_errs",
+			"type": "shell",
+			"command": "cargo check > errors.txt 2>&1"
+		},
+		{
+			"label": "fix_and_check",
+			"type": "shell",
+			"command": "python3 fix_extensions.py && cargo check"
+		},
+		{
+			"label": "check_errs2",
+			"type": "shell",
+			"command": "cargo check > errs2.txt 2>&1"
+		},
+		{
+			"label": "fix2",
+			"type": "shell",
+			"command": "python3 fix2.py && cargo check"
+		},
+		{
+			"label": "test_extensions",
+			"type": "shell",
+			"command": "python3 add_tests.py && cargo test"
+		},
+		{
+			"label": "commit",
+			"type": "shell",
+			"command": "rm tests_opossum/Opossum.UnitTests/Extensions/EventStoreExtensionsTests.cs && git add . && git commit -m \"feat: Port EventStoreExtensions to Rust with unit tests\""
 		}
 	]
 }
