@@ -152,6 +152,7 @@ mod tests {
     use crate::domain::{DomainEvent, EventRecord, Tag};
     use crate::ports::tests::{FakeClock, InMemoryStorage};
 
+    #[allow(dead_code)]
     fn create_test_event(
         position: u64,
         event_type: &str,
@@ -170,6 +171,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn create_test_event_record(position: u64, event_type: &str, tags: Vec<Tag>) -> EventRecord {
         EventRecord {
             position,
@@ -326,4 +328,93 @@ mod tests {
         let res = store.append_async(vec![event3], Some(failing_cond)).await;
         assert_eq!(res, Err(Error::AppendConditionFailed));
     }
+
+    #[tokio::test]
+    async fn test_append_with_multiple_events_assigns_sequential_positions() {
+        let storage = InMemoryStorage::new();
+        let clock = FakeClock::new(1696000000);
+        let store = OpossumStore::new(storage, clock);
+
+        let events = vec![
+            EventData {
+                event_id: "evt-1".to_string(),
+                event: DomainEvent { event_type: "TestEvent".to_string(), data: "1".to_string(), tags: vec![] },
+                metadata: None,
+            },
+            EventData {
+                event_id: "evt-2".to_string(),
+                event: DomainEvent { event_type: "TestEvent".to_string(), data: "2".to_string(), tags: vec![] },
+                metadata: None,
+            },
+            EventData {
+                event_id: "evt-3".to_string(),
+                event: DomainEvent { event_type: "TestEvent".to_string(), data: "3".to_string(), tags: vec![] },
+                metadata: None,
+            },
+        ];
+
+        store.append_async(events, None).await.unwrap();
+
+        let result = store.read_async(Query::all(), None, None).await.unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].position, 0);
+        assert_eq!(result[1].position, 1);
+        assert_eq!(result[2].position, 2);
+        assert_eq!(result[0].event.data, "1");
+        assert_eq!(result[1].event.data, "2");
+        assert_eq!(result[2].event.data, "3");
+    }
+
+    #[tokio::test]
+    async fn test_append_writes_all_event_files() {
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let clock = FakeClock::new(1696000000);
+        let store = OpossumStore::new(storage.clone(), clock);
+
+        let events = vec![
+            EventData {
+                event_id: "evt-1".to_string(),
+                event: DomainEvent { event_type: "Type1".to_string(), data: "1".to_string(), tags: vec![] },
+                metadata: None,
+            },
+            EventData {
+                event_id: "evt-2".to_string(),
+                event: DomainEvent { event_type: "Type2".to_string(), data: "2".to_string(), tags: vec![] },
+                metadata: None,
+            },
+        ];
+
+        store.append_async(events, None).await.unwrap();
+
+        let files = storage.read_dir("Events").await.unwrap();
+        assert!(files.contains(&"Events/0000000000.json".to_string()));
+        assert!(files.contains(&"Events/0000000000.json".to_string()));
+    }
+
+        #[tokio::test]
+    async fn test_append_multiple_sequential_appends_maintains_continuous_sequence() {
+        let storage = InMemoryStorage::new();
+        let clock = FakeClock::new(1696000000);
+        let store = OpossumStore::new(storage, clock);
+
+        let batch1 = vec![EventData {
+            event_id: "evt-1".to_string(),
+            event: DomainEvent { event_type: "TestEvent".to_string(), data: "1".to_string(), tags: vec![] },
+            metadata: None,
+        }];
+        store.append_async(batch1, None).await.unwrap();
+
+        let batch2 = vec![EventData {
+            event_id: "evt-2".to_string(),
+            event: DomainEvent { event_type: "TestEvent".to_string(), data: "2".to_string(), tags: vec![] },
+            metadata: None,
+        }];
+        store.append_async(batch2, None).await.unwrap();
+
+        let result = store.read_async(Query::all(), None, None).await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].position, 0);
+        assert_eq!(result[1].position, 1);
+    }
 }
+
