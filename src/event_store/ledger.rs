@@ -1,5 +1,3 @@
-use crate::ports::StorageBackend;
-
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub struct LedgerData {

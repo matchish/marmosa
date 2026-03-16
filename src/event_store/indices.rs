@@ -1,5 +1,3 @@
-use crate::ports::StorageBackend;
-
 pub struct TagIndex<S> {
     storage: S,
 }

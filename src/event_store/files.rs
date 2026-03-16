@@ -1,5 +1,3 @@
-use crate::ports::StorageBackend;
-
 pub struct EventFileManager<S> {
     storage: S,
 }
