@@ -80,6 +80,16 @@
 			"label": "cleanup2",
 			"type": "shell",
 			"command": "rm -f *.py *.txt && git add . && git commit --amend --no-edit"
+		},
+		{
+			"label": "Tests",
+			"type": "shell",
+			"command": "cargo test --test projection_end_to_end_integration_tests"
+		},
+		{
+			"label": "Test fail",
+			"type": "shell",
+			"command": "cargo test --test projection_end_to_end_integration_tests end_to_end_order_cancellation_removes_projection -- --nocapture"
 		}
 	]
 }
