@@ -15,14 +15,14 @@ pub struct DomainEvent {
     pub tags: Vec<Tag>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct EventData {
     pub event_id: String,
     pub event: DomainEvent,
     pub metadata: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct EventRecord {
     pub position: u64,
     pub event_id: String,
