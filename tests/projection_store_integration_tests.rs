@@ -6,21 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct TestOrderState {
     pub order_id: String,
     pub customer_name: String,
     pub total_amount: i32,
-}
-
-impl Default for TestOrderState {
-    fn default() -> Self {
-        Self {
-            order_id: String::new(),
-            customer_name: String::new(),
-            total_amount: 0,
-        }
-    }
 }
 
 async fn create_store() -> StorageBackendProjectionStore<Arc<InMemoryStorage>, TestOrderState> {
@@ -90,7 +80,7 @@ async fn delete_with_existing_key_removes_file() {
         customer_name: "Customer A".to_string(),
         total_amount: 100,
     };
-    
+
     store.save(&order_id, &state).await.unwrap();
     store.delete(&order_id).await.unwrap();
 
@@ -102,7 +92,7 @@ async fn delete_with_existing_key_removes_file() {
 async fn delete_with_non_existent_key_does_not_throw() {
     let store = create_store().await;
     let order_id = Uuid::new_v4().to_string();
-    
+
     let result = store.delete(&order_id).await;
     assert!(result.is_ok());
 }
@@ -116,14 +106,14 @@ async fn get_all_with_multiple_states_returns_all() {
         customer_name: "Customer A".to_string(),
         total_amount: 100,
     };
-    
+
     let order_id_2 = Uuid::new_v4().to_string();
     let state_2 = TestOrderState {
         order_id: order_id_2.clone(),
         customer_name: "Customer B".to_string(),
         total_amount: 150,
     };
-    
+
     store.save(&order_id_1, &state_1).await.unwrap();
     store.save(&order_id_2, &state_2).await.unwrap();
 
@@ -149,10 +139,10 @@ async fn save_with_special_characters_in_key_handles_safely() {
         customer_name: "Customer Spec".to_string(),
         total_amount: 99,
     };
-    
+
     let result = store.save(&order_id, &state).await;
     assert!(result.is_ok());
-    
+
     let retrieved = store.get(&order_id).await.unwrap();
     assert!(retrieved.is_some());
     assert_eq!(state.order_id, retrieved.unwrap().order_id);

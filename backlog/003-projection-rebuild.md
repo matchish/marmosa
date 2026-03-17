@@ -1,15 +1,15 @@
 # Projection Rebuild Support
 
-## Status: Not Started
+## Status: Done
 
 ## Description
 Add ability to rebuild projections from scratch by replaying all events. This is needed when projection logic changes or data becomes corrupted.
 
 ## Acceptance Criteria
-- [ ] `rebuild()` method on ProjectionRunner
-- [ ] Clears existing projection state before rebuilding
-- [ ] Resets checkpoint to 0
-- [ ] Processes all events from the beginning
+- [x] `rebuild()` method on ProjectionRunner
+- [x] Clears existing projection state before rebuilding
+- [x] Resets checkpoint to 0
+- [x] Processes all events from the beginning
 - [ ] Atomic rebuild (readers see old data until rebuild completes)
 - [ ] Optional: parallel rebuild for large event stores
 

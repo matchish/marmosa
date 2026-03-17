@@ -65,7 +65,9 @@ impl ProjectionDefinition for E2EOrderProjection {
                     customer_name: String,
                     customer_email: String,
                 }
-                if let Ok(data) = serde_json::from_str::<Created>(&event.event.data.replace("\\\"", "\"").trim_matches('"')) {
+                if let Ok(data) = serde_json::from_str::<Created>(
+                    event.event.data.replace("\\\"", "\"").trim_matches('"'),
+                ) {
                     Some(E2EOrderState {
                         order_id: data.order_id,
                         customer_name: data.customer_name,
@@ -85,7 +87,9 @@ impl ProjectionDefinition for E2EOrderProjection {
                         product_name: String,
                         price: f64,
                     }
-                    if let Ok(data) = serde_json::from_str::<ItemAdded>(&event.event.data.replace("\\\"", "\"").trim_matches('"')) {
+                    if let Ok(data) = serde_json::from_str::<ItemAdded>(
+                        event.event.data.replace("\\\"", "\"").trim_matches('"'),
+                    ) {
                         s.total_amount += data.price;
                         s.item_count += 1;
                         s.items.push(E2EOrderItem {
@@ -108,7 +112,8 @@ impl ProjectionDefinition for E2EOrderProjection {
 async fn end_to_end_create_and_query_order_works_correctly() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
 
     let order_id = "test-order-1";
@@ -122,8 +127,12 @@ async fn end_to_end_create_and_query_order_works_correctly() {
                     "order_id": order_id,
                     "customer_name": "Customer 1",
                     "customer_email": "customer1@test.com"
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -134,8 +143,12 @@ async fn end_to_end_create_and_query_order_works_correctly() {
                 data: serde_json::to_string(&serde_json::json!({
                     "product_name": "Product A",
                     "price": 99.99
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -146,16 +159,23 @@ async fn end_to_end_create_and_query_order_works_correctly() {
                 data: serde_json::to_string(&serde_json::json!({
                     "product_name": "Product B",
                     "price": 49.99
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
-        }
+        },
     ];
 
     store.append_async(events, None).await.unwrap();
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     runner.process_events(&all_events).await.unwrap();
 
     let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
@@ -177,7 +197,8 @@ async fn end_to_end_create_and_query_order_works_correctly() {
 async fn end_to_end_multiple_orders_queries_work() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
 
     let order1_id = "order-1";
@@ -195,8 +216,12 @@ async fn end_to_end_multiple_orders_queries_work() {
                 "order_id": order1_id,
                 "customer_name": "Customer 1",
                 "customer_email": "c1@test.com"
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order1_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order1_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -207,8 +232,12 @@ async fn end_to_end_multiple_orders_queries_work() {
             data: serde_json::to_string(&serde_json::json!({
                 "product_name": "Product A",
                 "price": 100.0
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order1_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order1_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -222,8 +251,12 @@ async fn end_to_end_multiple_orders_queries_work() {
                 "order_id": order2_id,
                 "customer_name": "Customer 2",
                 "customer_email": "c2@test.com"
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order2_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order2_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -234,8 +267,12 @@ async fn end_to_end_multiple_orders_queries_work() {
             data: serde_json::to_string(&serde_json::json!({
                 "product_name": "Product B",
                 "price": 200.0
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order2_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order2_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -246,8 +283,12 @@ async fn end_to_end_multiple_orders_queries_work() {
             data: serde_json::to_string(&serde_json::json!({
                 "product_name": "Product C",
                 "price": 300.0
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order2_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order2_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -261,8 +302,12 @@ async fn end_to_end_multiple_orders_queries_work() {
                 "order_id": order3_id,
                 "customer_name": "Customer 3",
                 "customer_email": "c3@test.com"
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order3_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order3_id.to_string(),
+            }],
         },
         metadata: None,
     });
@@ -273,15 +318,22 @@ async fn end_to_end_multiple_orders_queries_work() {
             data: serde_json::to_string(&serde_json::json!({
                 "product_name": "Product D",
                 "price": 50.0
-            })).unwrap(),
-            tags: vec![Tag { key: "orderId".to_string(), value: order3_id.to_string() }],
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order3_id.to_string(),
+            }],
         },
         metadata: None,
     });
 
     store.append_async(events, None).await.unwrap();
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     runner.process_events(&all_events).await.unwrap();
 
     let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
@@ -289,7 +341,10 @@ async fn end_to_end_multiple_orders_queries_work() {
 
     assert_eq!(all_orders.len(), 3);
 
-    let expensive_orders: Vec<_> = all_orders.into_iter().filter(|o| o.total_amount >= 200.0).collect();
+    let expensive_orders: Vec<_> = all_orders
+        .into_iter()
+        .filter(|o| o.total_amount >= 200.0)
+        .collect();
     assert_eq!(expensive_orders.len(), 1);
     assert_eq!(expensive_orders[0].order_id, order2_id);
     assert!(!expensive_orders.iter().any(|o| o.total_amount == 100.0));
@@ -299,7 +354,8 @@ async fn end_to_end_multiple_orders_queries_work() {
 async fn end_to_end_incremental_update_updates_projection() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
 
     let order_id = "order-inc";
@@ -313,8 +369,12 @@ async fn end_to_end_incremental_update_updates_projection() {
                     "order_id": order_id,
                     "customer_name": "Customer",
                     "customer_email": "customer@test.com"
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -325,16 +385,23 @@ async fn end_to_end_incremental_update_updates_projection() {
                 data: serde_json::to_string(&serde_json::json!({
                     "product_name": "Product A",
                     "price": 100.0
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
-        }
+        },
     ];
 
     store.append_async(initial_events, None).await.unwrap();
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     runner.process_events(&all_events).await.unwrap();
 
     let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
@@ -342,26 +409,31 @@ async fn end_to_end_incremental_update_updates_projection() {
     assert_eq!(order_before.as_ref().unwrap().item_count, 1);
     assert_eq!(order_before.as_ref().unwrap().total_amount, 100.0);
 
-    let new_events = vec![
-        EventData {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event: DomainEvent {
-                event_type: "E2EItemAddedEvent".to_string(),
-                data: serde_json::to_string(&serde_json::json!({
-                    "product_name": "Product B",
-                    "price": 200.0
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
-            },
-            metadata: None,
-        }
-    ];
+    let new_events = vec![EventData {
+        event_id: uuid::Uuid::new_v4().to_string(),
+        event: DomainEvent {
+            event_type: "E2EItemAddedEvent".to_string(),
+            data: serde_json::to_string(&serde_json::json!({
+                "product_name": "Product B",
+                "price": 200.0
+            }))
+            .unwrap(),
+            tags: vec![Tag {
+                key: "orderId".to_string(),
+                value: order_id.to_string(),
+            }],
+        },
+        metadata: None,
+    }];
 
     store.append_async(new_events, None).await.unwrap();
 
     let checkpoint = runner.get_checkpoint().await.unwrap();
     let start_pos = checkpoint.map(|c| c.last_position);
-    let incremental_events = store.read_async(Query::all(), start_pos, None, None).await.unwrap();
+    let incremental_events = store
+        .read_async(Query::all(), start_pos, None, None)
+        .await
+        .unwrap();
 
     runner.process_events(&incremental_events).await.unwrap();
 
@@ -374,7 +446,8 @@ async fn end_to_end_incremental_update_updates_projection() {
 async fn end_to_end_order_cancellation_removes_projection() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
 
     let order_id = "order-cancel";
@@ -388,8 +461,12 @@ async fn end_to_end_order_cancellation_removes_projection() {
                     "order_id": order_id,
                     "customer_name": "Customer",
                     "customer_email": "customer@test.com"
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -400,8 +477,12 @@ async fn end_to_end_order_cancellation_removes_projection() {
                 data: serde_json::to_string(&serde_json::json!({
                     "product_name": "Product A",
                     "price": 100.0
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -410,15 +491,21 @@ async fn end_to_end_order_cancellation_removes_projection() {
             event: DomainEvent {
                 event_type: "E2EOrderCancelledEvent".to_string(),
                 data: "{}".to_string(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
-        }
+        },
     ];
 
     store.append_async(events, None).await.unwrap();
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     runner.process_events(&all_events).await.unwrap();
 
     let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
@@ -430,7 +517,8 @@ async fn end_to_end_order_cancellation_removes_projection() {
 async fn end_to_end_checkpoint_management_tracks_progress() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
 
     let initial_checkpoint = runner.get_checkpoint().await.unwrap();
@@ -447,8 +535,12 @@ async fn end_to_end_checkpoint_management_tracks_progress() {
                     "order_id": order_id,
                     "customer_name": "Customer",
                     "customer_email": "customer@test.com"
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
         },
@@ -459,16 +551,23 @@ async fn end_to_end_checkpoint_management_tracks_progress() {
                 data: serde_json::to_string(&serde_json::json!({
                     "product_name": "Product A",
                     "price": 100.0
-                })).unwrap(),
-                tags: vec![Tag { key: "orderId".to_string(), value: order_id.to_string() }],
+                }))
+                .unwrap(),
+                tags: vec![Tag {
+                    key: "orderId".to_string(),
+                    value: order_id.to_string(),
+                }],
             },
             metadata: None,
-        }
+        },
     ];
 
     store.append_async(events, None).await.unwrap();
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     runner.process_events(&all_events).await.unwrap();
 
     let checkpoint_after = runner.get_checkpoint().await.unwrap();

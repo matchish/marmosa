@@ -55,6 +55,8 @@ impl EventStoreError {
     }
 }
 
+impl core::error::Error for EventStoreError {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,5 +188,3 @@ mod tests {
         }
     }
 }
-
-impl core::error::Error for EventStoreError {}

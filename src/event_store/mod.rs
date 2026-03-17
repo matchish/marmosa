@@ -63,16 +63,27 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
         let sequence_files = self.storage.read_dir(dir_path).await.unwrap_or_default();
         let mut available_positions: Vec<u64> = sequence_files
             .iter()
-            .filter_map(|f| f.split('/').last()?.strip_suffix(".json")?.parse::<u64>().ok())
+            .filter_map(|f| {
+                f.split('/')
+                    .next_back()?
+                    .strip_suffix(".json")?
+                    .parse::<u64>()
+                    .ok()
+            })
             .collect();
         available_positions.sort_unstable();
 
         let start = start_position.map(|p| p + 1).unwrap_or(0); // Exclusive bound
 
         let descending_opt = crate::domain::ReadOption::DESCENDING;
-        let is_descending = options.as_ref().map_or(false, |opts| opts.contains(&descending_opt));
-        
-        let mut filtered_positions: Vec<u64> = available_positions.into_iter().filter(|&p| p >= start).collect();
+        let is_descending = options
+            .as_ref()
+            .is_some_and(|opts| opts.contains(&descending_opt));
+
+        let mut filtered_positions: Vec<u64> = available_positions
+            .into_iter()
+            .filter(|&p| p >= start)
+            .collect();
         if is_descending {
             filtered_positions.reverse();
         }
@@ -85,10 +96,10 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
 
             if query.matches(&record) {
                 results.push(record);
-                if let Some(max) = max_count {
-                    if results.len() >= max {
-                        break;
-                    }
+                if let Some(max) = max_count
+                    && results.len() >= max
+                {
+                    break;
                 }
             }
         }
@@ -108,12 +119,18 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
 
         let result = async {
             let dir_path = "Events";
-            let _ = self.storage.create_dir_all(&dir_path).await; // Ignore if exists
+            let _ = self.storage.create_dir_all(dir_path).await; // Ignore if exists
 
-            let existing_files = self.storage.read_dir(&dir_path).await.unwrap_or_default();
+            let existing_files = self.storage.read_dir(dir_path).await.unwrap_or_default();
             let mut sequence = existing_files
                 .iter()
-                .filter_map(|f| f.split('/').last()?.strip_suffix(".json")?.parse::<u64>().ok())
+                .filter_map(|f| {
+                    f.split('/')
+                        .next_back()?
+                        .strip_suffix(".json")?
+                        .parse::<u64>()
+                        .ok()
+                })
                 .max()
                 .map(|v| v + 1)
                 .unwrap_or(0);
@@ -164,7 +181,8 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
         max_count: Option<usize>,
         options: Option<Vec<crate::domain::ReadOption>>,
     ) -> Result<Vec<EventRecord>, Error> {
-        self.read_internal(query, start_position, max_count, options).await
+        self.read_internal(query, start_position, max_count, options)
+            .await
     }
 }
 
@@ -355,7 +373,10 @@ mod tests {
 
         store.append_async(events, None).await.unwrap();
 
-        let result = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let result = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].position, 0);
         assert_eq!(result[1].position, 1);
@@ -427,7 +448,10 @@ mod tests {
         }];
         store.append_async(batch2, None).await.unwrap();
 
-        let result = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let result = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].position, 0);
         assert_eq!(result[1].position, 1);
@@ -455,7 +479,10 @@ mod tests {
                 .unwrap();
         }
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].position, 0);
         assert_eq!(events[1].position, 1);
@@ -565,7 +592,10 @@ mod tests {
                 .unwrap();
         }
 
-        let events = store.read_async(Query::all(), Some(1), None, None).await.unwrap();
+        let events = store
+            .read_async(Query::all(), Some(1), None, None)
+            .await
+            .unwrap();
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].position, 2);
         assert_eq!(events[1].position, 3);

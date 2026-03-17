@@ -6,7 +6,10 @@ use marmosa::event_store::{EventStore, OpossumStore};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-fn create_store() -> (Arc<InMemoryStorage>, Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>) {
+fn create_store() -> (
+    Arc<InMemoryStorage>,
+    Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>,
+) {
     let storage = Arc::new(InMemoryStorage::new());
     let clock = FakeClock::new(1000);
     let store = Arc::new(OpossumStore::new(Arc::clone(&storage), clock));
@@ -56,7 +59,10 @@ async fn concurrent_appends_serialized_execution_all_events_stored() {
         task.await.unwrap();
     }
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     assert_eq!(all_events.len(), append_count * events_per_append);
 
     let mut positions: Vec<u64> = all_events.iter().map(|e| e.position).collect();
@@ -104,7 +110,10 @@ async fn concurrent_reads_during_writes_eventually_consistent() {
         let task = tokio::spawn(async move {
             let mut local_results = Vec::new();
             while completed_counter.load(Ordering::SeqCst) < write_count {
-                let events = store_clone.read_async(Query::all(), None, None, None).await.unwrap();
+                let events = store_clone
+                    .read_async(Query::all(), None, None, None)
+                    .await
+                    .unwrap();
                 local_results.push(events.len());
                 // tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
             }
@@ -123,7 +132,10 @@ async fn concurrent_reads_during_writes_eventually_consistent() {
         all_read_results.extend(results);
     }
 
-    let final_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let final_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     assert_eq!(final_events.len(), write_count);
 
     all_read_results.sort();
@@ -158,7 +170,10 @@ async fn concurrent_appends_with_optimistic_concurrency_detects_conflicts() {
         }],
     };
 
-    let initial_events = store.read_async(query.clone(), None, None, None).await.unwrap();
+    let initial_events = store
+        .read_async(query.clone(), None, None, None)
+        .await
+        .unwrap();
     let initial_position = initial_events.last().unwrap().position;
 
     let success_count = Arc::new(AtomicUsize::new(0));
@@ -169,7 +184,7 @@ async fn concurrent_appends_with_optimistic_concurrency_detects_conflicts() {
         let store_clone = Arc::clone(&store);
         let succ_clone = Arc::clone(&success_count);
         let fail_clone = Arc::clone(&failure_count);
-        
+
         let task = tokio::spawn(async move {
             let update_evt = create_test_event(
                 "Resource",
@@ -185,9 +200,16 @@ async fn concurrent_appends_with_optimistic_concurrency_detects_conflicts() {
                 fail_if_events_match: Query::all(), // Condition checking reads current state
             };
 
-            match store_clone.append_async(vec![update_evt], Some(condition)).await {
-                Ok(_) => { succ_clone.fetch_add(1, Ordering::SeqCst); }
-                Err(_) => { fail_clone.fetch_add(1, Ordering::SeqCst); }
+            match store_clone
+                .append_async(vec![update_evt], Some(condition))
+                .await
+            {
+                Ok(_) => {
+                    succ_clone.fetch_add(1, Ordering::SeqCst);
+                }
+                Err(_) => {
+                    fail_clone.fetch_add(1, Ordering::SeqCst);
+                }
             }
         });
         tasks.push(task);
@@ -235,7 +257,10 @@ async fn stress_test_high_concurrent_load_maintains_integrity() {
         task.await.unwrap();
     }
 
-    let all_events = store.read_async(Query::all(), None, None, None).await.unwrap();
+    let all_events = store
+        .read_async(Query::all(), None, None, None)
+        .await
+        .unwrap();
     assert_eq!(all_events.len(), total_events);
 
     let mut positions: Vec<u64> = all_events.iter().map(|e| e.position).collect();
@@ -272,7 +297,10 @@ async fn concurrent_appends_to_multiple_contexts_isolated() {
             let evt = create_test_event(
                 "Context1",
                 &format!("Event-{}", i),
-                vec![Tag { key: "context".to_string(), value: "context1".to_string() }],
+                vec![Tag {
+                    key: "context".to_string(),
+                    value: "context1".to_string(),
+                }],
             );
             store_clone.append_async(vec![evt], None).await.unwrap();
         });
@@ -285,7 +313,10 @@ async fn concurrent_appends_to_multiple_contexts_isolated() {
             let evt = create_test_event(
                 "Context2",
                 &format!("Event-{}", i),
-                vec![Tag { key: "context".to_string(), value: "context2".to_string() }],
+                vec![Tag {
+                    key: "context".to_string(),
+                    value: "context2".to_string(),
+                }],
             );
             store_clone.append_async(vec![evt], None).await.unwrap();
         });
@@ -299,15 +330,21 @@ async fn concurrent_appends_to_multiple_contexts_isolated() {
     let q1 = Query {
         items: vec![QueryItem {
             event_types: vec![],
-            tags: vec![Tag { key: "context".to_string(), value: "context1".to_string() }],
+            tags: vec![Tag {
+                key: "context".to_string(),
+                value: "context1".to_string(),
+            }],
         }],
     };
     let ctx1_events = store.read_async(q1, None, None, None).await.unwrap();
-    
+
     let q2 = Query {
         items: vec![QueryItem {
             event_types: vec![],
-            tags: vec![Tag { key: "context".to_string(), value: "context2".to_string() }],
+            tags: vec![Tag {
+                key: "context".to_string(),
+                value: "context2".to_string(),
+            }],
         }],
     };
     let ctx2_events = store.read_async(q2, None, None, None).await.unwrap();
@@ -345,7 +382,11 @@ async fn concurrent_query_by_event_type_returns_consistent_results() {
                     tags: vec![],
                 }],
             };
-            store_clone.read_async(q, None, None, None).await.unwrap().len()
+            store_clone
+                .read_async(q, None, None, None)
+                .await
+                .unwrap()
+                .len()
         });
         query_tasks.push(task);
     }
@@ -371,8 +412,14 @@ async fn concurrent_append_with_fail_if_match_serializes_correctly() {
                 "FirstLogin",
                 &format!("Attempt-{}", i),
                 vec![
-                    Tag { key: "userId".to_string(), value: user_id.to_string() },
-                    Tag { key: "type".to_string(), value: "FirstLogin".to_string() },
+                    Tag {
+                        key: "userId".to_string(),
+                        value: user_id.to_string(),
+                    },
+                    Tag {
+                        key: "type".to_string(),
+                        value: "FirstLogin".to_string(),
+                    },
                 ],
             );
 
@@ -382,14 +429,24 @@ async fn concurrent_append_with_fail_if_match_serializes_correctly() {
                     items: vec![QueryItem {
                         event_types: vec![],
                         tags: vec![
-                            Tag { key: "userId".to_string(), value: user_id.to_string() },
-                            Tag { key: "type".to_string(), value: "FirstLogin".to_string() },
+                            Tag {
+                                key: "userId".to_string(),
+                                value: user_id.to_string(),
+                            },
+                            Tag {
+                                key: "type".to_string(),
+                                value: "FirstLogin".to_string(),
+                            },
                         ],
                     }],
                 },
             };
 
-            if store_clone.append_async(vec![evt], Some(condition)).await.is_ok() {
+            if store_clone
+                .append_async(vec![evt], Some(condition))
+                .await
+                .is_ok()
+            {
                 succ_clone.fetch_add(1, Ordering::SeqCst);
             }
         });
@@ -406,8 +463,14 @@ async fn concurrent_append_with_fail_if_match_serializes_correctly() {
         items: vec![QueryItem {
             event_types: vec![],
             tags: vec![
-                Tag { key: "userId".to_string(), value: user_id.to_string() },
-                Tag { key: "type".to_string(), value: "FirstLogin".to_string() },
+                Tag {
+                    key: "userId".to_string(),
+                    value: user_id.to_string(),
+                },
+                Tag {
+                    key: "type".to_string(),
+                    value: "FirstLogin".to_string(),
+                },
             ],
         }],
     };

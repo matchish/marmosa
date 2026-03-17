@@ -88,6 +88,12 @@ pub mod tests {
         locks: Mutex<BTreeSet<String>>,
     }
 
+    impl Default for InMemoryStorage {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl InMemoryStorage {
         pub fn new() -> Self {
             Self {

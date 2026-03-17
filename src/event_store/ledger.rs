@@ -95,7 +95,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
             .iter()
             .filter_map(|f| {
                 f.split('/')
-                    .last()?
+                    .next_back()?
                     .strip_suffix(".json")?
                     .parse::<u64>()
                     .ok()

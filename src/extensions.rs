@@ -42,12 +42,14 @@ impl<T: EventStore + Send + Sync> EventStoreExt for T {
     }
 
     async fn read_last_async(&self, query: Query) -> Result<Option<EventRecord>, Error> {
-        let events = self.read_async(
-            query,
-            None,
-            Some(1),
-            Some(alloc::vec![crate::domain::ReadOption::DESCENDING]),
-        ).await?;
+        let events = self
+            .read_async(
+                query,
+                None,
+                Some(1),
+                Some(alloc::vec![crate::domain::ReadOption::DESCENDING]),
+            )
+            .await?;
         Ok(events.into_iter().next())
     }
 }
@@ -111,7 +113,10 @@ impl<T: serde::Serialize> ToDomainEventExt for T {
             .last()
             .unwrap_or("UnknownType");
         let data = serde_json_core::to_vec::<_, 4096>(self)
-            .map(|v| alloc::string::String::from_utf8(v.to_vec()).unwrap_or_else(|_| alloc::string::String::from("{}")))
+            .map(|v| {
+                alloc::string::String::from_utf8(v.to_vec())
+                    .unwrap_or_else(|_| alloc::string::String::from("{}"))
+            })
             .unwrap_or_else(|_| alloc::string::String::from("{}"));
         DomainEventBuilder::new(type_name, &data)
     }
@@ -172,7 +177,7 @@ mod tests {
             match event.event.event_type.as_str() {
                 "StudentCreatedEvent" => {
                     let parts: Vec<&str> = event.event.data.split('|').collect();
-                    let name = parts.get(0).copied().unwrap_or("").to_string();
+                    let name = parts.first().copied().unwrap_or("").to_string();
                     let email = parts.get(1).copied().unwrap_or("").to_string();
                     let student_id = event
                         .event

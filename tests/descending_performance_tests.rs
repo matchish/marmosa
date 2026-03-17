@@ -48,12 +48,7 @@ async fn descending_order_should_be_fast_with_many_events_async() {
     // Descending
     let sw2 = Instant::now();
     let descending = store
-        .read_async(
-            Query::all(),
-            None,
-            None,
-            Some(vec![ReadOption::DESCENDING]),
-        )
+        .read_async(Query::all(), None, None, Some(vec![ReadOption::DESCENDING]))
         .await
         .unwrap();
     let descending_time = sw2.elapsed().as_micros();

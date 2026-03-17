@@ -42,6 +42,7 @@ pub trait ProjectionStore<TState> {
     ) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 
     fn delete(&self, key: &str) -> impl core::future::Future<Output = Result<(), Error>> + Send;
+    fn clear(&self) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 }
 
 /// Checkpoint for tracking projection progress
@@ -119,6 +120,20 @@ where
     }
 
     /// Process a batch of events starting from the last checkpoint
+
+    pub async fn rebuild<E: crate::event_store::EventStore>(
+        &self,
+        event_store: &E,
+    ) -> Result<u64, Error> {
+        self.store.clear().await?;
+        self.save_checkpoint(0, 0).await?;
+
+        let events = event_store
+            .read_async(crate::domain::Query::all(), None, None, None)
+            .await?;
+        self.process_events(&events).await
+    }
+
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {
         let query = self.projection.event_types();
         let mut checkpoint = self
@@ -198,6 +213,16 @@ impl<S, TState> StorageBackendProjectionStore<S, TState> {
 impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync>
     ProjectionStore<TState> for StorageBackendProjectionStore<S, TState>
 {
+    async fn clear(&self) -> Result<(), Error> {
+        let dir_path = alloc::format!("Projections/{}", self.projection_name);
+        let items = self.storage.read_dir(&dir_path).await.unwrap_or_default();
+        for item in items {
+            let path = alloc::format!("{}/{}", dir_path, item);
+            let _ = self.storage.delete_file(&path).await;
+        }
+        Ok(())
+    }
+
     async fn get(&self, key: &str) -> Result<Option<TState>, Error> {
         let path = self.get_file_path(key);
         match self.storage.read_file(&path).await {
@@ -217,12 +242,11 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
 
         let mut results = Vec::new();
         for file_path in files {
-            if file_path.ends_with(".json") {
-                if let Ok(data) = self.storage.read_file(&file_path).await {
-                    if let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data) {
-                        results.push(state);
-                    }
-                }
+            if file_path.ends_with(".json")
+                && let Ok(data) = self.storage.read_file(&file_path).await
+                && let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data)
+            {
+                results.push(state);
             }
         }
         Ok(results)
