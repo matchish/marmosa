@@ -61,24 +61,23 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
         let mut results = Vec::new();
 
         let sequence_files = self.storage.read_dir(dir_path).await.unwrap_or_default();
-        let total_count = sequence_files.len() as u64;
+        let mut available_positions: Vec<u64> = sequence_files
+            .iter()
+            .filter_map(|f| f.split('/').last()?.strip_suffix(".json")?.parse::<u64>().ok())
+            .collect();
+        available_positions.sort_unstable();
 
-        let start = start_position.map(|p| p + 1).unwrap_or(0); // Exclusive bound
-        
+        let start = start_position.map(|p| p + 1).unwrap_or(1); // Exclusive bound
+
         let descending_opt = crate::domain::ReadOption::DESCENDING;
         let is_descending = options.as_ref().map_or(false, |opts| opts.contains(&descending_opt));
+        
+        let mut filtered_positions: Vec<u64> = available_positions.into_iter().filter(|&p| p >= start).collect();
+        if is_descending {
+            filtered_positions.reverse();
+        }
 
-        let positions: alloc::boxed::Box<dyn Iterator<Item = u64> + Send> = if is_descending {
-            if total_count >= start {
-                alloc::boxed::Box::new((start..total_count).rev())
-            } else {
-                alloc::boxed::Box::new(core::iter::empty())
-            }
-        } else {
-            alloc::boxed::Box::new(start..total_count)
-        };
-
-        for current_pos in positions {
+        for current_pos in filtered_positions {
             let file_path = format!("{}/{:010}.json", dir_path, current_pos);
             let data = self.storage.read_file(&file_path).await?;
             let (record, _) =
@@ -112,7 +111,12 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
             let _ = self.storage.create_dir_all(&dir_path).await; // Ignore if exists
 
             let existing_files = self.storage.read_dir(&dir_path).await.unwrap_or_default();
-            let mut sequence = existing_files.len() as u64;
+            let mut sequence = existing_files
+                .iter()
+                .filter_map(|f| f.split('/').last()?.strip_suffix(".json")?.parse::<u64>().ok())
+                .max()
+                .map(|v| v + 1)
+                .unwrap_or(1);
 
             if let Some(cond) = condition {
                 // Read all current events to check against condition
