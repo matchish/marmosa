@@ -67,7 +67,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
             .collect();
         available_positions.sort_unstable();
 
-        let start = start_position.map(|p| p + 1).unwrap_or(1); // Exclusive bound
+        let start = start_position.map(|p| p + 1).unwrap_or(0); // Exclusive bound
 
         let descending_opt = crate::domain::ReadOption::DESCENDING;
         let is_descending = options.as_ref().map_or(false, |opts| opts.contains(&descending_opt));
@@ -116,7 +116,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
                 .filter_map(|f| f.split('/').last()?.strip_suffix(".json")?.parse::<u64>().ok())
                 .max()
                 .map(|v| v + 1)
-                .unwrap_or(1);
+                .unwrap_or(0);
 
             if let Some(cond) = condition {
                 // Read all current events to check against condition

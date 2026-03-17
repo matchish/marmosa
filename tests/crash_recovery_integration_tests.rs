@@ -94,8 +94,8 @@ async fn append_after_crash_preserves_orphaned_events_and_allocates_next_positio
     let all_events = recovered_store.read_async(Query::all(), None, None, None).await.unwrap();
     
     assert_eq!(all_events.len(), 4);
-    assert_eq!(all_events[0].position, 1);
-    assert_eq!(all_events[1].position, 2);
+    assert_eq!(all_events[0].position, 0);
+    assert_eq!(all_events[1].position, 1);
     assert_eq!(all_events[2].position, 3);
     assert_eq!(all_events[3].position, 4);
 
@@ -131,7 +131,7 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
     let events_path = "Events";
     storage.create_dir_all(events_path).await.unwrap(); // Make sure dir exists
 
-    for i in 4..=5 {
+    for i in 3..=4 {
         let orphan = EventRecord {
             position: i,
             event_id: uuid::Uuid::new_v4().to_string(),
@@ -172,7 +172,9 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
 
     assert_eq!(all_events.len(), 7);
     for i in 0..all_events.len() {
-        assert_eq!(all_events[i].position, (i + 1) as u64);
+        
+        
+        assert_eq!(all_events[i].position, i as u64);
     }
 
     for i in 0..3 {
@@ -182,7 +184,7 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
 
     for i in 3..5 {
         let data: OrphanedEvent = serde_json::from_str(&all_events[i].event.data.replace("\\\"", "\"").trim_matches('"')).unwrap();
-        assert_eq!(data.data, format!("orphaned-{}", i + 1));
+        assert_eq!(data.data, format!("orphaned-{}", i));
     }
 
     for i in 5..7 {
