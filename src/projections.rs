@@ -27,7 +27,20 @@ pub trait ProjectionDefinition {
 }
 
 /// Storage interface for projection state - can be implemented for different backends
+pub trait ProjectionTagProvider<TState> {
+    fn get_tags(&self, state: &TState) -> Vec<crate::domain::Tag>;
+}
+
+pub struct NoopProjectionTagProvider;
+impl<TState> ProjectionTagProvider<TState> for NoopProjectionTagProvider {
+    fn get_tags(&self, _state: &TState) -> Vec<crate::domain::Tag> {
+        Vec::new()
+    }
+}
+
 pub trait ProjectionStore<TState> {
+    fn query_by_tag(&self, tag: &crate::domain::Tag) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
+    fn query_by_tags(&self, tags: &[crate::domain::Tag]) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
     fn get(
         &self,
         key: &str,
@@ -186,21 +199,19 @@ where
 }
 
 /// Default projection store backed by StorageBackend (file system, KV, etc.)
-pub struct StorageBackendProjectionStore<S, TState> {
+pub struct StorageBackendProjectionStore<S, TState, TTagProvider = NoopProjectionTagProvider> {
     storage: S,
     projection_name: String,
+    tag_provider: Option<TTagProvider>,
     _marker: core::marker::PhantomData<TState>,
 }
 
-impl<S, TState> StorageBackendProjectionStore<S, TState> {
-    pub fn new(storage: S, projection_name: String) -> Self {
-        Self {
-            storage,
-            projection_name,
-            _marker: core::marker::PhantomData,
-        }
-    }
+impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
 
+}
+
+
+impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
     fn get_projection_path(&self) -> String {
         alloc::format!("Projections/{}", self.projection_name)
     }
@@ -210,9 +221,99 @@ impl<S, TState> StorageBackendProjectionStore<S, TState> {
     }
 }
 
-impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync>
-    ProjectionStore<TState> for StorageBackendProjectionStore<S, TState>
+impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvider> {
+    pub fn new(storage: S, projection_name: String) -> Self {
+        Self {
+            storage,
+            projection_name,
+            tag_provider: None,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub fn new_with_tag_provider<P>(storage: S, projection_name: String, tag_provider: P) -> StorageBackendProjectionStore<S, TState, P> {
+        StorageBackendProjectionStore {
+            storage,
+            projection_name,
+            tag_provider: Some(tag_provider),
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+}
+
+impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync, TTagProvider: ProjectionTagProvider<TState> + Send + Sync>
+    ProjectionStore<TState> for StorageBackendProjectionStore<S, TState, TTagProvider>
 {
+    async fn query_by_tag(&self, tag: &crate::domain::Tag) -> Result<Vec<TState>, Error> {
+        let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+        let mut results = Vec::new();
+        if let Ok(files) = self.storage.read_dir(&dir_path).await {
+            let mut keys = Vec::new();
+            for file in files {
+                if file.ends_with(".json") {
+                    let name = if let Some(pos) = file.rfind('/') {
+                        &file[pos + 1..file.len() - 5]
+                    } else {
+                        &file[..file.len() - 5]
+                    };
+                    keys.push(alloc::string::ToString::to_string(name));
+                }
+            }
+            for key in keys {
+                if let Some(state) = self.get(&key).await? {
+                    results.push(state);
+                }
+            }
+        }
+        Ok(results)
+    }
+
+    async fn query_by_tags(&self, tags: &[crate::domain::Tag]) -> Result<Vec<TState>, Error> {
+        if tags.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut candidate_keys: Option<alloc::collections::BTreeSet<alloc::string::String>> = None;
+
+        for tag in tags {
+            let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+            let mut keys = alloc::collections::BTreeSet::new();
+            if let Ok(files) = self.storage.read_dir(&dir_path).await {
+                for file in files {
+                    if file.ends_with(".json") {
+                        let name = if let Some(pos) = file.rfind('/') {
+                            &file[pos + 1..file.len() - 5]
+                        } else {
+                            &file[..file.len() - 5]
+                        };
+                        keys.insert(alloc::string::ToString::to_string(name));
+                    }
+                }
+            }
+            if let Some(mut existing) = candidate_keys {
+                existing.retain(|k| keys.contains(k));
+                candidate_keys = Some(existing);
+            } else {
+                candidate_keys = Some(keys);
+            }
+            if let Some(existing) = &candidate_keys {
+                if existing.is_empty() {
+                    return Ok(Vec::new());
+                }
+            }
+        }
+
+        let mut results = Vec::new();
+        if let Some(keys) = candidate_keys {
+            for key in keys {
+                if let Some(state) = self.get(&key).await? {
+                    results.push(state);
+                }
+            }
+        }
+        Ok(results)
+    }
     async fn clear(&self) -> Result<(), Error> {
         let dir_path = alloc::format!("Projections/{}", self.projection_name);
         let items = self.storage.read_dir(&dir_path).await.unwrap_or_default();
@@ -253,15 +354,48 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
     }
 
     async fn save(&self, key: &str, state: &TState) -> Result<(), Error> {
+        if let Some(provider) = &self.tag_provider {
+            if let Ok(Some(old_state)) = self.get(key).await {
+                let old_tags = provider.get_tags(&old_state);
+                for tag in old_tags {
+                    let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                    let file_path = alloc::format!("{}/{}.json", dir_path, key);
+                    let _ = self.storage.delete_file(&file_path).await;
+                }
+            }
+        }
+
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
 
         let path = self.get_file_path(key);
         let data = serde_json_core::to_vec::<_, 4096>(state).map_err(|_| Error::IoError)?;
-        self.storage.write_file(&path, &data).await
+        self.storage.write_file(&path, &data).await?;
+
+        if let Some(provider) = &self.tag_provider {
+            let new_tags = provider.get_tags(state);
+            for tag in new_tags {
+                let tag_dir = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                let _ = self.storage.create_dir_all(&tag_dir).await;
+                let tag_file = alloc::format!("{}/{}.json", tag_dir, key);
+                let _ = self.storage.write_file(&tag_file, b"").await;
+            }
+        }
+        Ok(())
     }
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
+        if let Some(provider) = &self.tag_provider {
+            if let Ok(Some(old_state)) = self.get(key).await {
+                let old_tags = provider.get_tags(&old_state);
+                for tag in old_tags {
+                    let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                    let file_path = alloc::format!("{}/{}.json", dir_path, key);
+                    let _ = self.storage.delete_file(&file_path).await;
+                }
+            }
+        }
+
         let path = self.get_file_path(key);
         match self.storage.delete_file(&path).await {
             Ok(_) => Ok(()),
