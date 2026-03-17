@@ -149,8 +149,10 @@ where
                 let current_state = self.store.get(&key).await?;
 
                 // Apply event
-                if let Some(new_state) = self.projection.apply(current_state, event) {
-                    self.store.save(&key, &new_state).await?;
+                let new_state = self.projection.apply(current_state, event);
+                match new_state {
+                    Some(s) => self.store.save(&key, &s).await?,
+                    None => self.store.delete(&key).await?,
                 }
             }
 
