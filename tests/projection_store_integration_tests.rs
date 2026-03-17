@@ -14,6 +14,7 @@ pub struct TestOrderState {
 }
 
 async fn create_store() -> StorageBackendProjectionStore<Arc<InMemoryStorage>, TestOrderState> {
+    let _clock = common::FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     let store_name = format!("TestOrders_{}", Uuid::new_v4().simple());
     StorageBackendProjectionStore::new(storage, store_name)

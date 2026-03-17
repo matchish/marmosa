@@ -27,6 +27,7 @@ impl ProjectionTagProvider<TestProjection> for TestProjectionTagProvider {
 }
 
 async fn get_store() -> StorageBackendProjectionStore<Arc<InMemoryStorage>, TestProjection, TestProjectionTagProvider> {
+    let _clock = common::FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     StorageBackendProjectionStore::new_with_tag_provider(storage, "TestProjection".to_string(), TestProjectionTagProvider)
 }
@@ -144,6 +145,7 @@ async fn delete_async_removes_from_indices_async() {
 
 #[tokio::test]
 async fn query_by_tag_async_without_tag_provider_returns_empty_async() {
+    let _clock = common::FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     let store: StorageBackendProjectionStore<Arc<InMemoryStorage>, TestProjection, NoopProjectionTagProvider> =
         StorageBackendProjectionStore::new(storage, "TestProjection".to_string());

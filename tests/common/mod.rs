@@ -98,12 +98,10 @@ impl StorageBackend for InMemoryStorage {
     }
 }
 
-#[allow(dead_code)]
 pub struct FakeClock {
     time: AtomicU64,
 }
 
-#[allow(dead_code)]
 impl FakeClock {
     pub fn new(start: u64) -> Self {
         Self {
