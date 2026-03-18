@@ -8,6 +8,7 @@ pub enum Error {
     NotFound,
     AlreadyExists,
     AppendConditionFailed,
+    ArgumentError(String),
 }
 
 pub trait StorageBackend {

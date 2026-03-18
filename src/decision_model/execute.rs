@@ -14,6 +14,24 @@ pub trait DecisionModelExt {
     where
         F: Fn(&Self) -> Fut + Send + Sync,
         Fut: core::future::Future<Output = Result<R, Error>> + Send;
+
+    /// Builds a decision model from an event store asynchronously.
+    fn build_decision_model_async<P, S>(
+        &self,
+        projection: P,
+    ) -> impl core::future::Future<Output = Result<crate::decision_model::DecisionModel<S>, Error>> + Send
+    where
+        P: crate::decision_model::DecisionProjection<State = S> + Send + Sync,
+        S: Send + Sync;
+
+    /// Builds a single decision model state combining multiple homogeneous projections
+    fn build_decision_model_nary_async<P, S>(
+        &self,
+        projections: &[&P],
+    ) -> impl core::future::Future<Output = Result<(alloc::vec::Vec<S>, crate::domain::AppendCondition), Error>> + Send
+    where
+        P: crate::decision_model::DecisionProjection<State = S> + Send + Sync + ?Sized,
+        S: Send + Sync;
 }
 
 impl<T: EventStore + Send + Sync> DecisionModelExt for T {
@@ -39,6 +57,45 @@ impl<T: EventStore + Send + Sync> DecisionModelExt for T {
             }
             attempt += 1;
         }
+    }
+
+    async fn build_decision_model_async<P, S>(
+        &self,
+        projection: P,
+    ) -> Result<crate::decision_model::DecisionModel<S>, Error>
+    where
+        P: crate::decision_model::DecisionProjection<State = S> + Send + Sync,
+        S: Send + Sync,
+    {
+        let query = projection.query().clone();
+        let events = self.read_async(query, None, None, None).await?;
+        let model = crate::decision_model::build_decision_model_from_events(&projection, &events);
+        Ok(model)
+    }
+
+    async fn build_decision_model_nary_async<P, S>(
+        &self,
+        projections: &[&P],
+    ) -> Result<(alloc::vec::Vec<S>, crate::domain::AppendCondition), Error>
+    where
+        P: crate::decision_model::DecisionProjection<State = S> + Send + Sync + ?Sized,
+        S: Send + Sync,
+    {
+        if projections.is_empty() {
+            return Err(Error::ArgumentError(alloc::string::String::from(
+                "projections cannot be empty",
+            )));
+        }
+        
+        let mut composite_query_items = alloc::vec::Vec::new();
+        for p in projections.iter() {
+            composite_query_items.extend(p.query().items.iter().cloned());
+        }
+        let composite_query = crate::domain::Query { items: composite_query_items };
+        let events = self.read_async(composite_query, None, None, None).await?;
+        
+        let model = crate::decision_model::build_decision_model_nary_from_events(projections, &events);
+        Ok(model)
     }
 }
 
