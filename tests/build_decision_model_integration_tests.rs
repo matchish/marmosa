@@ -21,13 +21,6 @@ struct StudentEnrolledEvent {
     student_id: String,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[allow(dead_code)]
-struct UnrelatedEvent {
-    data: String,
-}
-
-// Helper projections
 struct CourseExistsProjection {
     query: Query,
 }

@@ -190,7 +190,6 @@ mod tests {
             }],
         };
 
-        let _query_clone = query.clone();
         let projection = DelegateDecisionProjection::new(false, query, |s, _| s);
         let model = build_decision_model_from_events(&projection, &[]);
 
