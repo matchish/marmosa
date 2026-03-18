@@ -34,6 +34,15 @@ pub trait ProjectionTagProvider<TState> {
 }
 
 pub struct NoopProjectionTagProvider;
+
+#[derive(Clone, Default)]
+pub struct NoopClock;
+impl crate::ports::Clock for NoopClock {
+    fn now_millis(&self) -> u64 {
+        0
+    }
+}
+
 impl<TState> ProjectionTagProvider<TState> for NoopProjectionTagProvider {
     fn get_tags(&self, _state: &TState) -> Vec<crate::domain::Tag> {
         Vec::new()
@@ -207,16 +216,22 @@ where
 }
 
 /// Default projection store backed by StorageBackend (file system, KV, etc.)
-pub struct StorageBackendProjectionStore<S, TState, TTagProvider = NoopProjectionTagProvider> {
+pub struct StorageBackendProjectionStore<
+    S,
+    TState,
+    TTagProvider = NoopProjectionTagProvider,
+    C = NoopClock,
+> {
     storage: S,
-    projection_name: String,
+    projection_name: alloc::string::String,
     tag_provider: Option<TTagProvider>,
+    clock: Option<C>,
     _marker: core::marker::PhantomData<TState>,
 }
 
-impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {}
+impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {}
 
-impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
+impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {
     fn get_projection_path(&self) -> String {
         alloc::format!("Projections/{}", self.projection_name)
     }
@@ -226,25 +241,56 @@ impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
     }
 }
 
-impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvider> {
-    pub fn new(storage: S, projection_name: String) -> Self {
+impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvider, NoopClock> {
+    pub fn new_with_clock(
+        storage: S,
+        projection_name: alloc::string::String,
+        clock: Option<NoopClock>,
+    ) -> Self {
         Self {
             storage,
             projection_name,
             tag_provider: None,
+            clock,
             _marker: core::marker::PhantomData,
         }
     }
 
-    pub fn new_with_tag_provider<P>(
+    pub fn new(storage: S, projection_name: alloc::string::String) -> Self {
+        Self {
+            storage,
+            projection_name,
+            tag_provider: None,
+            clock: None,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub fn new_with_tag_provider<P, C>(
         storage: S,
-        projection_name: String,
+        projection_name: alloc::string::String,
         tag_provider: P,
-    ) -> StorageBackendProjectionStore<S, TState, P> {
+    ) -> StorageBackendProjectionStore<S, TState, P, C> {
         StorageBackendProjectionStore {
             storage,
             projection_name,
             tag_provider: Some(tag_provider),
+            clock: None,
+            _marker: core::marker::PhantomData,
+        }
+    }
+
+    pub fn new_with_tag_provider_and_clock<P, C>(
+        storage: S,
+        projection_name: alloc::string::String,
+        tag_provider: P,
+        clock: Option<C>,
+    ) -> StorageBackendProjectionStore<S, TState, P, C> {
+        StorageBackendProjectionStore {
+            storage,
+            projection_name,
+            tag_provider: Some(tag_provider),
+            clock,
             _marker: core::marker::PhantomData,
         }
     }
@@ -252,9 +298,10 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
 
 impl<
     S: StorageBackend + Send + Sync,
-    TState: Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    TState: Serialize + for<'de> Deserialize<'de> + Send + Sync + Clone,
     TTagProvider: ProjectionTagProvider<TState> + Send + Sync,
-> ProjectionStore<TState> for StorageBackendProjectionStore<S, TState, TTagProvider>
+    C: crate::ports::Clock + Send + Sync,
+> ProjectionStore<TState> for StorageBackendProjectionStore<S, TState, TTagProvider, C>
 {
     async fn query_by_tag(&self, tag: &crate::domain::Tag) -> Result<Vec<TState>, Error> {
         let dir_path = alloc::format!(
@@ -349,9 +396,15 @@ impl<
         let path = self.get_file_path(key);
         match self.storage.read_file(&path).await {
             Ok(data) => {
-                let (state, _) =
-                    serde_json_core::from_slice::<TState>(&data).map_err(|_| Error::IoError)?;
-                Ok(Some(state))
+                if let Ok((wrapper, _)) =
+                    serde_json_core::from_slice::<ProjectionWrapper<TState>>(&data)
+                {
+                    Ok(Some(wrapper.data))
+                } else if let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data) {
+                    Ok(Some(state))
+                } else {
+                    Err(Error::IoError)
+                }
             }
             Err(Error::NotFound) => Ok(None),
             Err(e) => Err(e),
@@ -366,9 +419,14 @@ impl<
         for file_path in files {
             if file_path.ends_with(".json")
                 && let Ok(data) = self.storage.read_file(&file_path).await
-                && let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data)
             {
-                results.push(state);
+                if let Ok((wrapper, _)) =
+                    serde_json_core::from_slice::<ProjectionWrapper<TState>>(&data)
+                {
+                    results.push(wrapper.data);
+                } else if let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data) {
+                    results.push(state);
+                }
             }
         }
         Ok(results)
@@ -394,9 +452,65 @@ impl<
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
 
+        let metadata_dir = alloc::format!("{}/Metadata", self.get_projection_path());
+        let _ = self.storage.create_dir_all(&metadata_dir).await;
+
         let path = self.get_file_path(key);
-        let data = serde_json_core::to_vec::<_, 4096>(state).map_err(|_| Error::IoError)?;
-        self.storage.write_file(&path, &data).await?;
+        let now = if let Some(clock) = &self.clock {
+            crate::ports::Clock::now_millis(clock)
+        } else {
+            0
+        };
+
+        let metadata_index_path = alloc::format!("{}/index.json", metadata_dir);
+        let mut metadata_index: alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)> =
+            if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
+                if let Ok((map, _)) = serde_json_core::from_slice(&data) {
+                    map
+                } else {
+                    alloc::vec::Vec::new()
+                }
+            } else {
+                alloc::vec::Vec::new()
+            };
+
+        let mut current_metadata =
+            if let Some((_, meta)) = metadata_index.iter().find(|(k, _)| k == key) {
+                let mut m = meta.clone();
+                m.version += 1;
+                m.last_updated_at = now;
+                m
+            } else {
+                ProjectionMetadata {
+                    created_at: now,
+                    last_updated_at: now,
+                    version: 1,
+                    size_in_bytes: 0,
+                }
+            };
+
+        let wrapper = ProjectionWrapper {
+            data: state.clone(),
+            metadata: current_metadata.clone(),
+        };
+
+        let data = serde_json_core::to_vec::<_, 16384>(&wrapper).map_err(|_| Error::IoError)?;
+        current_metadata.size_in_bytes = data.len() as u64;
+
+        self.storage.write_file(&path, data.as_slice()).await?;
+
+        if let Some(pos) = metadata_index.iter().position(|(k, _)| k == key) {
+            metadata_index[pos] = (alloc::string::String::from(key), current_metadata.clone());
+        } else {
+            metadata_index.push((alloc::string::String::from(key), current_metadata.clone()));
+        }
+
+        if let Ok(index_data) = serde_json_core::to_vec::<_, 65536>(&metadata_index) {
+            let _ = self
+                .storage
+                .write_file(&metadata_index_path, index_data.as_slice())
+                .await;
+        }
 
         if let Some(provider) = &self.tag_provider {
             let new_tags = provider.get_tags(state);
@@ -429,6 +543,25 @@ impl<
                 );
                 let file_path = alloc::format!("{}/{}.json", dir_path, key);
                 let _ = self.storage.delete_file(&file_path).await;
+            }
+        }
+
+        let metadata_index_path =
+            alloc::format!("{}/Metadata/index.json", self.get_projection_path());
+        if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
+            if let Ok((mut metadata_index, _)) = serde_json_core::from_slice::<
+                alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)>,
+            >(&data)
+            {
+                if let Some(pos) = metadata_index.iter().position(|(k, _)| k == key) {
+                    metadata_index.remove(pos);
+                    if let Ok(index_data) = serde_json_core::to_vec::<_, 65536>(&metadata_index) {
+                        let _ = self
+                            .storage
+                            .write_file(&metadata_index_path, index_data.as_slice())
+                            .await;
+                    }
+                }
             }
         }
 
@@ -630,7 +763,16 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectionWrapper<TState> {
+    #[serde(rename = "data")]
+    pub data: TState,
+    #[serde(rename = "metadata")]
+    pub metadata: ProjectionMetadata,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectionMetadata {
     pub created_at: u64,
     pub last_updated_at: u64,

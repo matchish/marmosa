@@ -3,13 +3,14 @@ use marmosa::ports::{Clock, Error, StorageBackend};
 use std::collections::{BTreeMap, BTreeSet};
 use std::format;
 use std::string::{String, ToString};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 
+#[derive(Clone)]
 pub struct InMemoryStorage {
-    files: Mutex<BTreeMap<String, Vec<u8>>>,
-    dirs: Mutex<BTreeMap<String, ()>>,
-    locks: Mutex<BTreeSet<String>>,
+    files: Arc<Mutex<BTreeMap<String, Vec<u8>>>>,
+    dirs: Arc<Mutex<BTreeMap<String, ()>>>,
+    locks: Arc<Mutex<BTreeSet<String>>>,
 }
 
 impl Default for InMemoryStorage {
@@ -21,9 +22,9 @@ impl Default for InMemoryStorage {
 impl InMemoryStorage {
     pub fn new() -> Self {
         Self {
-            files: Mutex::new(BTreeMap::new()),
-            dirs: Mutex::new(BTreeMap::new()),
-            locks: Mutex::new(BTreeSet::new()),
+            files: Arc::new(Mutex::new(BTreeMap::new())),
+            dirs: Arc::new(Mutex::new(BTreeMap::new())),
+            locks: Arc::new(Mutex::new(BTreeSet::new())),
         }
     }
 }

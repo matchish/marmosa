@@ -3,7 +3,7 @@ mod common;
 use common::{FakeClock, InMemoryStorage};
 use marmosa::{
     decision_model::{DecisionModelExt, DecisionProjection},
-    domain::{EventData, EventRecord, Query, QueryItem, Tag, DomainEvent},
+    domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag},
     event_store::{EventStore, OpossumStore},
 };
 use std::sync::Arc;
@@ -144,7 +144,10 @@ async fn build_decision_model_async_empty_store_fail_if_events_match_is_projecti
         .unwrap();
 
     // The method return type for append condition contains `fail_if_events_match` of type Option<Query>
-    assert_eq!(model.append_condition.fail_if_events_match, projection.query().clone());
+    assert_eq!(
+        model.append_condition.fail_if_events_match,
+        projection.query().clone()
+    );
 }
 
 #[tokio::test]
@@ -162,8 +165,12 @@ async fn build_decision_model_async_after_append_state_reflects_events_async() {
                     data: serde_json::to_string(&CourseCreatedEvent {
                         course_id: course_id.clone(),
                         max_students: 10,
-                    }).unwrap(),
-                    tags: vec![Tag { key: "course_id".to_string(), value: course_id.clone() }],
+                    })
+                    .unwrap(),
+                    tags: vec![Tag {
+                        key: "course_id".to_string(),
+                        value: course_id.clone(),
+                    }],
                 },
             }],
             None,
@@ -195,8 +202,12 @@ async fn build_decision_model_async_after_multiple_enrollments_count_is_correct_
                         data: serde_json::to_string(&StudentEnrolledEvent {
                             course_id: course_id.clone(),
                             student_id: format!("student-{}", i),
-                        }).unwrap(),
-                        tags: vec![Tag { key: "course_id".to_string(), value: course_id.clone() }],
+                        })
+                        .unwrap(),
+                        tags: vec![Tag {
+                            key: "course_id".to_string(),
+                            value: course_id.clone(),
+                        }],
                     },
                 }],
                 None,
@@ -229,8 +240,12 @@ async fn build_decision_model_nary_async_three_projections_all_states_correct_as
                         data: serde_json::to_string(&CourseCreatedEvent {
                             course_id: course_id.clone(),
                             max_students: 10,
-                        }).unwrap(),
-                        tags: vec![Tag { key: "course_id".to_string(), value: course_id.clone() }],
+                        })
+                        .unwrap(),
+                        tags: vec![Tag {
+                            key: "course_id".to_string(),
+                            value: course_id.clone(),
+                        }],
                     },
                 },
                 EventData {
@@ -241,8 +256,12 @@ async fn build_decision_model_nary_async_three_projections_all_states_correct_as
                         data: serde_json::to_string(&StudentEnrolledEvent {
                             course_id: course_id.clone(),
                             student_id: "student-1".to_string(),
-                        }).unwrap(),
-                        tags: vec![Tag { key: "course_id".to_string(), value: course_id.clone() }],
+                        })
+                        .unwrap(),
+                        tags: vec![Tag {
+                            key: "course_id".to_string(),
+                            value: course_id.clone(),
+                        }],
                     },
                 },
                 EventData {
@@ -253,10 +272,14 @@ async fn build_decision_model_nary_async_three_projections_all_states_correct_as
                         data: serde_json::to_string(&StudentEnrolledEvent {
                             course_id: course_id.clone(),
                             student_id: "student-2".to_string(),
-                        }).unwrap(),
-                        tags: vec![Tag { key: "course_id".to_string(), value: course_id.clone() }],
+                        })
+                        .unwrap(),
+                        tags: vec![Tag {
+                            key: "course_id".to_string(),
+                            value: course_id.clone(),
+                        }],
                     },
-                }
+                },
             ],
             None,
         )
@@ -266,8 +289,9 @@ async fn build_decision_model_nary_async_three_projections_all_states_correct_as
     let p1 = EnrollmentCountProjection::new(course_id.clone());
     let p2 = EnrollmentCountProjection::new(course_id.clone());
     let p3 = EnrollmentCountProjection::new(course_id.clone());
-    let projections: Vec<&(dyn DecisionProjection<State = i32> + Send + Sync)> = vec![&p1, &p2, &p3];
-    
+    let projections: Vec<&(dyn DecisionProjection<State = i32> + Send + Sync)> =
+        vec![&p1, &p2, &p3];
+
     let (states, condition) = store
         .build_decision_model_nary_async(&projections)
         .await

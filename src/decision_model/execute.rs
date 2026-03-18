@@ -28,7 +28,9 @@ pub trait DecisionModelExt {
     fn build_decision_model_nary_async<P, S>(
         &self,
         projections: &[&P],
-    ) -> impl core::future::Future<Output = Result<(alloc::vec::Vec<S>, crate::domain::AppendCondition), Error>> + Send
+    ) -> impl core::future::Future<
+        Output = Result<(alloc::vec::Vec<S>, crate::domain::AppendCondition), Error>,
+    > + Send
     where
         P: crate::decision_model::DecisionProjection<State = S> + Send + Sync + ?Sized,
         S: Send + Sync;
@@ -86,15 +88,18 @@ impl<T: EventStore + Send + Sync> DecisionModelExt for T {
                 "projections cannot be empty",
             )));
         }
-        
+
         let mut composite_query_items = alloc::vec::Vec::new();
         for p in projections.iter() {
             composite_query_items.extend(p.query().items.iter().cloned());
         }
-        let composite_query = crate::domain::Query { items: composite_query_items };
+        let composite_query = crate::domain::Query {
+            items: composite_query_items,
+        };
         let events = self.read_async(composite_query, None, None, None).await?;
-        
-        let model = crate::decision_model::build_decision_model_nary_from_events(projections, &events);
+
+        let model =
+            crate::decision_model::build_decision_model_nary_from_events(projections, &events);
         Ok(model)
     }
 }
