@@ -8,7 +8,6 @@ use marmosa::projections::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Default)]
 pub struct TestProjection {
@@ -51,7 +50,7 @@ async fn create_store_and_storage(
         FakeClock,
     >,
 ) {
-    let mut storage = InMemoryStorage::new();
+    let storage = InMemoryStorage::new();
     let arc_storage = Arc::new(storage);
 
     let store = StorageBackendProjectionStore::new_with_tag_provider_and_clock(

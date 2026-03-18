@@ -14,7 +14,6 @@ pub use options::*;
 
 use alloc::format;
 use alloc::vec::Vec;
-use serde_json::to_vec;
 
 use crate::domain::AppendCondition;
 use crate::domain::EventData;

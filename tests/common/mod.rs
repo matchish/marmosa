@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use core::sync::atomic::{AtomicU64, Ordering};
 use marmosa::ports::{Clock, Error, StorageBackend};
 use std::collections::{BTreeMap, BTreeSet};

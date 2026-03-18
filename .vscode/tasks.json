@@ -1,0 +1,10 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Fix Projections Task",
+			"type": "shell",
+			"command": "python3 fix_projections_again.py && cargo check"
+		}
+	]
+}

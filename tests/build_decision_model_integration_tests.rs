@@ -22,6 +22,7 @@ struct StudentEnrolledEvent {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[allow(dead_code)]
 struct UnrelatedEvent {
     data: String,
 }

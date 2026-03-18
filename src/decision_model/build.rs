@@ -96,7 +96,7 @@ mod tests {
     use super::*;
     use crate::decision_model::DelegateDecisionProjection;
     use crate::domain::{DomainEvent, QueryItem, Tag};
-    use alloc::string::{String, ToString};
+    use alloc::string::ToString;
     use alloc::vec;
 
     fn make_event(event_type: &str, position: u64, tags: Vec<(&str, &str)>) -> EventRecord {
@@ -190,7 +190,7 @@ mod tests {
             }],
         };
 
-        let query_clone = query.clone();
+        let _query_clone = query.clone();
         let projection = DelegateDecisionProjection::new(false, query, |s, _| s);
         let model = build_decision_model_from_events(&projection, &[]);
 
