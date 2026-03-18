@@ -429,11 +429,7 @@ impl<
     }
     async fn clear(&self) -> Result<(), Error> {
         let dir_path = alloc::format!("Projections/{}", self.projection_name);
-        let items = self.storage.read_dir(&dir_path).await.unwrap_or_default();
-        for item in items {
-            let path = alloc::format!("{}/{}", dir_path, item);
-            let _ = self.storage.delete_file(&path).await;
-        }
+        let _ = self.storage.delete_dir_all(&dir_path).await;
         Ok(())
     }
 
