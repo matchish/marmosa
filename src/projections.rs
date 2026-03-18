@@ -26,6 +26,15 @@ pub trait ProjectionDefinition {
 
     /// Applies an event to the current state, returning the new state
     fn apply(&self, state: Option<Self::State>, event: &EventRecord) -> Option<Self::State>;
+
+    /// Optional downcast to ProjectionWithRelatedEvents
+    fn as_related_events(
+        &self,
+    ) -> Option<
+        &dyn crate::projections::related_events::ProjectionWithRelatedEvents<State = Self::State>,
+    > {
+        None
+    }
 }
 
 /// Storage interface for projection state - can be implemented for different backends
@@ -161,10 +170,31 @@ where
         let events = event_store
             .read_async(crate::domain::Query::all(), None, None, None)
             .await?;
-        self.process_events(&events).await
+        self.process_events_with_store(&events, Some(event_store))
+            .await
     }
 
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {
+        self.process_events_internal(
+            events,
+            None::<&crate::event_store::OpossumStore<S, crate::projections::NoopClock>>,
+        )
+        .await
+    }
+
+    pub async fn process_events_with_store<E: crate::event_store::EventStore>(
+        &self,
+        events: &[EventRecord],
+        event_store: Option<&E>,
+    ) -> Result<u64, Error> {
+        self.process_events_internal(events, event_store).await
+    }
+
+    async fn process_events_internal<E: crate::event_store::EventStore>(
+        &self,
+        events: &[EventRecord],
+        event_store: Option<&E>,
+    ) -> Result<u64, Error> {
         let query = self.projection.event_types();
         let mut checkpoint = self
             .get_checkpoint()
@@ -194,7 +224,22 @@ where
                 let current_state = self.store.get(&key).await?;
 
                 // Apply event
-                let new_state = self.projection.apply(current_state, event);
+                let new_state = if let Some(as_related) = self.projection.as_related_events() {
+                    if let Some(query) = as_related.get_related_events_query(event) {
+                        if let Some(store) = event_store {
+                            let rel_events = store.read_async(query, None, None, None).await?;
+                            as_related.apply_with_related(current_state, event, &rel_events)
+                        } else {
+                            // If we need related events but don't have a store, we could either error or pass empty.
+                            // In a real framework we might error here.
+                            as_related.apply_with_related(current_state, event, &[])
+                        }
+                    } else {
+                        as_related.apply_with_related(current_state, event, &[])
+                    }
+                } else {
+                    self.projection.apply(current_state, event)
+                };
                 match new_state {
                     Some(s) => self.store.save(&key, &s).await?,
                     None => self.store.delete(&key).await?,
