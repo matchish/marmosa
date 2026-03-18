@@ -10,7 +10,7 @@ use crate::ports::Error;
 use crate::projections::{ProjectionCheckpoint, ProjectionDefinition, ProjectionRunner, ProjectionStore};
 use crate::ports::StorageBackend;
 
-pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait RebuildTask<E: EventStore>: Send + Sync {
     fn name(&self) -> String;
@@ -93,10 +93,8 @@ impl<'a, E: EventStore + Send + Sync> ProjectionRebuilder<'a, E> {
         }
         
         if !tasks.is_empty() {
-            // concurrent wait via tokio spawn or just awaiting in parallel. 
-            // We use simple iteration as naive chunking for now since we don't have futures::future::join_all
-            for t in tasks {
-                let (name, res) = t.await;
+            let results = futures::future::join_all(tasks).await;
+            for (name, res) in results {
                 match res {
                     Ok(_) => {
                         total_rebuilt += 1;

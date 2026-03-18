@@ -164,14 +164,22 @@ where
         &self,
         event_store: &E,
     ) -> Result<u64, Error> {
-        self.store.clear().await?;
-        self.save_checkpoint(0, 0).await?;
+        let lock_id = alloc::format!(".proj_lock_{}", self.projection.projection_name());
+        self.storage.acquire_stream_lock(&lock_id).await?;
 
-        let events = event_store
-            .read_async(crate::domain::Query::all(), None, None, None)
-            .await?;
-        self.process_events_with_store(&events, Some(event_store))
-            .await
+        let res = async {
+            self.store.clear().await?;
+            self.save_checkpoint(0, 0).await?;
+
+            let events = event_store
+                .read_async(crate::domain::Query::all(), None, None, None)
+                .await?;
+            self.process_events_with_store(&events, Some(event_store))
+                .await
+        }.await;
+
+        let _ = self.storage.release_stream_lock(&lock_id).await;
+        res
     }
 
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {

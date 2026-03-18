@@ -4,7 +4,7 @@ use crate::projections::ProjectionDefinition;
 /// Defines a projection that fetches related events from the event store
 /// to build its state. The framework will automatically load related events
 /// before calling `apply_with_related`.
-pub trait ProjectionWithRelatedEvents: ProjectionDefinition {
+pub trait ProjectionWithRelatedEvents: ProjectionDefinition + Send + Sync {
     /// Determines what related events to load for a given event.
     /// Called by the framework before apply to fetch additional context.
     fn get_related_events_query(&self, event: &EventRecord) -> Option<Query>;
