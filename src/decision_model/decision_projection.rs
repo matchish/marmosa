@@ -109,11 +109,7 @@ mod tests {
         }
     }
 
-    fn make_timestamped_event(
-        event_type: &str,
-        timestamp: u64,
-        position: u64,
-    ) -> EventRecord {
+    fn make_timestamped_event(event_type: &str, timestamp: u64, position: u64) -> EventRecord {
         EventRecord {
             position,
             event_id: alloc::format!("evt-{}", position),
@@ -293,16 +289,12 @@ mod tests {
         let current_time = event_time + 5 * 60 * 1000;
         let clock = FakeClock::new(current_time);
 
-        let projection = TimeAwareDecisionProjection::new(
-            false,
-            Query::all(),
-            clock,
-            |_, evt, clock| {
+        let projection =
+            TimeAwareDecisionProjection::new(false, Query::all(), clock, |_, evt, clock| {
                 let now = clock.now_millis();
                 let age = now - evt.timestamp;
                 age <= grace_period
-            },
-        );
+            });
 
         let evt = make_timestamped_event("PriceChanged", event_time, 1);
         let result = projection.apply(projection.initial_state(), &evt);
@@ -319,16 +311,12 @@ mod tests {
         let current_time = event_time + 2 * 60 * 60 * 1000;
         let clock = FakeClock::new(current_time);
 
-        let projection = TimeAwareDecisionProjection::new(
-            false,
-            Query::all(),
-            clock,
-            |_, evt, clock| {
+        let projection =
+            TimeAwareDecisionProjection::new(false, Query::all(), clock, |_, evt, clock| {
                 let now = clock.now_millis();
                 let age = now - evt.timestamp;
                 age <= grace_period
-            },
-        );
+            });
 
         let evt = make_timestamped_event("PriceChanged", event_time, 1);
         let result = projection.apply(projection.initial_state(), &evt);

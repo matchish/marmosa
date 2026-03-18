@@ -1,8 +1,8 @@
-use alloc::string::ToString;
-use alloc::vec::Vec;
 use crate::domain::{EventRecord, Query, QueryItem, Tag};
 use crate::event_store::{EventStore, OpossumStore};
 use crate::ports::{Clock, Error, StorageBackend};
+use alloc::string::ToString;
+use alloc::vec::Vec;
 
 pub struct AddTagsResult {
     pub tags_added: usize,
@@ -19,12 +19,10 @@ pub trait EventStoreMaintenance {
         F: Fn(&EventRecord) -> Vec<Tag> + Send + Sync;
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintenance for OpossumStore<S, C> {
-    async fn add_tags<F>(
-        &self,
-        event_type: &str,
-        tag_factory: F,
-    ) -> Result<AddTagsResult, Error>
+impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintenance
+    for OpossumStore<S, C>
+{
+    async fn add_tags<F>(&self, event_type: &str, tag_factory: F) -> Result<AddTagsResult, Error>
     where
         F: Fn(&EventRecord) -> Vec<Tag> + Send + Sync,
     {
@@ -46,17 +44,21 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintena
 
         for mut record in events {
             events_processed += 1;
-            
+
             let new_tags = tag_factory(&record);
             let mut added_for_this_event = 0;
-            
+
             for tag in new_tags {
                 if !record.event.tags.iter().any(|t| t.key == tag.key) {
                     record.event.tags.push(tag.clone());
                     added_for_this_event += 1;
-                    
+
                     // Add index
-                    let index_dir = alloc::format!("Indices/{}/{}", tag.key.to_lowercase(), tag.value.to_lowercase());
+                    let index_dir = alloc::format!(
+                        "Indices/{}/{}",
+                        tag.key.to_lowercase(),
+                        tag.value.to_lowercase()
+                    );
                     let _ = self.storage.create_dir_all(&index_dir).await;
                     let index_file = alloc::format!("{}/{:010}.json", index_dir, record.position);
                     let _ = self.storage.write_file(&index_file, b"{}").await;
@@ -65,9 +67,10 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintena
 
             if added_for_this_event > 0 {
                 tags_added += added_for_this_event;
-                
+
                 // Rewrite event to file
-                let vec = serde_json_core::to_vec::<_, 4096>(&record).map_err(|_| Error::IoError)?;
+                let vec =
+                    serde_json_core::to_vec::<_, 4096>(&record).map_err(|_| Error::IoError)?;
                 let file_path = alloc::format!("Events/{:010}.json", record.position);
                 let _ = self.storage.write_file(&file_path, &vec).await;
             }
@@ -106,22 +109,43 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
-        store.append_async(alloc::vec![
-            create_test_event("CourseCreated"),
-            create_test_event("CourseCreated"),
-        ], None).await.unwrap();
 
-        let result = store.add_tags("CourseCreated", |_| {
-            alloc::vec![Tag { key: "region".to_string(), value: "EU".to_string() }]
-        }).await.unwrap();
+        store
+            .append_async(
+                alloc::vec![
+                    create_test_event("CourseCreated"),
+                    create_test_event("CourseCreated"),
+                ],
+                None,
+            )
+            .await
+            .unwrap();
+
+        let result = store
+            .add_tags("CourseCreated", |_| {
+                alloc::vec![Tag {
+                    key: "region".to_string(),
+                    value: "EU".to_string()
+                }]
+            })
+            .await
+            .unwrap();
 
         assert_eq!(result.tags_added, 2);
         assert_eq!(result.events_processed, 2);
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         for event in events {
-            assert!(event.event.tags.iter().any(|t| t.key == "region" && t.value == "EU"));
+            assert!(
+                event
+                    .event
+                    .tags
+                    .iter()
+                    .any(|t| t.key == "region" && t.value == "EU")
+            );
         }
     }
 
@@ -130,20 +154,41 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
-        store.append_async(alloc::vec![
-            create_test_event("CourseCreated"),
-            create_test_event("StudentRegistered"),
-            create_test_event("CourseCreated"),
-        ], None).await.unwrap();
 
-        store.add_tags("CourseCreated", |_| {
-            alloc::vec![Tag { key: "region".to_string(), value: "EU".to_string() }]
-        }).await.unwrap();
+        store
+            .append_async(
+                alloc::vec![
+                    create_test_event("CourseCreated"),
+                    create_test_event("StudentRegistered"),
+                    create_test_event("CourseCreated"),
+                ],
+                None,
+            )
+            .await
+            .unwrap();
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
-        let course_created = events.iter().filter(|e| e.event.event_type == "CourseCreated").collect::<Vec<_>>();
-        let student = events.iter().filter(|e| e.event.event_type == "StudentRegistered").collect::<Vec<_>>();
+        store
+            .add_tags("CourseCreated", |_| {
+                alloc::vec![Tag {
+                    key: "region".to_string(),
+                    value: "EU".to_string()
+                }]
+            })
+            .await
+            .unwrap();
+
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
+        let course_created = events
+            .iter()
+            .filter(|e| e.event.event_type == "CourseCreated")
+            .collect::<Vec<_>>();
+        let student = events
+            .iter()
+            .filter(|e| e.event.event_type == "StudentRegistered")
+            .collect::<Vec<_>>();
 
         for e in course_created {
             assert!(e.event.tags.iter().any(|t| t.key == "region"));
@@ -158,19 +203,31 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
+
         let mut evt = create_test_event("CourseCreated");
-        evt.event.tags.push(Tag { key: "region".to_string(), value: "US".to_string() });
+        evt.event.tags.push(Tag {
+            key: "region".to_string(),
+            value: "US".to_string(),
+        });
         store.append_async(alloc::vec![evt], None).await.unwrap();
 
-        let result = store.add_tags("CourseCreated", |_| {
-            alloc::vec![Tag { key: "region".to_string(), value: "EU".to_string() }]
-        }).await.unwrap();
+        let result = store
+            .add_tags("CourseCreated", |_| {
+                alloc::vec![Tag {
+                    key: "region".to_string(),
+                    value: "EU".to_string()
+                }]
+            })
+            .await
+            .unwrap();
 
         assert_eq!(result.tags_added, 0);
         assert_eq!(result.events_processed, 1);
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         assert_eq!(events[0].event.tags.len(), 1);
         assert_eq!(events[0].event.tags[0].value, "US");
     }
@@ -180,24 +237,42 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
+
         let mut evt = create_test_event("CourseCreated");
-        evt.event.tags.push(Tag { key: "courseId".to_string(), value: "abc".to_string() });
+        evt.event.tags.push(Tag {
+            key: "courseId".to_string(),
+            value: "abc".to_string(),
+        });
         store.append_async(alloc::vec![evt], None).await.unwrap();
 
-        let result = store.add_tags("CourseCreated", |_| {
-            alloc::vec![
-                Tag { key: "courseId".to_string(), value: "xyz".to_string() },
-                Tag { key: "region".to_string(), value: "EU".to_string() }
-            ]
-        }).await.unwrap();
+        let result = store
+            .add_tags("CourseCreated", |_| {
+                alloc::vec![
+                    Tag {
+                        key: "courseId".to_string(),
+                        value: "xyz".to_string()
+                    },
+                    Tag {
+                        key: "region".to_string(),
+                        value: "EU".to_string()
+                    }
+                ]
+            })
+            .await
+            .unwrap();
 
         assert_eq!(result.tags_added, 1);
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
         let tags = &events[0].event.tags;
         assert_eq!(tags.len(), 2);
-        assert_eq!(tags.iter().find(|t| t.key == "courseId").unwrap().value, "abc");
+        assert_eq!(
+            tags.iter().find(|t| t.key == "courseId").unwrap().value,
+            "abc"
+        );
         assert_eq!(tags.iter().find(|t| t.key == "region").unwrap().value, "EU");
     }
 
@@ -206,10 +281,16 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
-        let result = store.add_tags("NonExistentEventType", |_| {
-            alloc::vec![Tag { key: "key".to_string(), value: "value".to_string() }]
-        }).await.unwrap();
+
+        let result = store
+            .add_tags("NonExistentEventType", |_| {
+                alloc::vec![Tag {
+                    key: "key".to_string(),
+                    value: "value".to_string()
+                }]
+            })
+            .await
+            .unwrap();
 
         assert_eq!(result.tags_added, 0);
         assert_eq!(result.events_processed, 0);
@@ -220,17 +301,31 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
-        store.append_async(alloc::vec![create_test_event("CourseCreated")], None).await.unwrap();
 
-        store.add_tags("CourseCreated", |_| {
-            alloc::vec![Tag { key: "region".to_string(), value: "EU".to_string() }]
-        }).await.unwrap();
+        store
+            .append_async(alloc::vec![create_test_event("CourseCreated")], None)
+            .await
+            .unwrap();
 
-        let query = Query { items: alloc::vec![QueryItem {
-            event_types: alloc::vec![],
-            tags: alloc::vec![Tag { key: "region".to_string(), value: "EU".to_string() }],
-        }]};
+        store
+            .add_tags("CourseCreated", |_| {
+                alloc::vec![Tag {
+                    key: "region".to_string(),
+                    value: "EU".to_string()
+                }]
+            })
+            .await
+            .unwrap();
+
+        let query = Query {
+            items: alloc::vec![QueryItem {
+                event_types: alloc::vec![],
+                tags: alloc::vec![Tag {
+                    key: "region".to_string(),
+                    value: "EU".to_string()
+                }],
+            }],
+        };
 
         let events = store.read_async(query, None, None, None).await.unwrap();
         assert_eq!(events.len(), 1);
@@ -242,21 +337,39 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
+
         let mut evt = create_test_event("CourseCreated");
-        evt.event.tags.push(Tag { key: "courseId".to_string(), value: "course-42".to_string() });
+        evt.event.tags.push(Tag {
+            key: "courseId".to_string(),
+            value: "course-42".to_string(),
+        });
         store.append_async(alloc::vec![evt], None).await.unwrap();
 
-        store.add_tags("CourseCreated", |seq_evt| {
-            if let Some(course_id) = seq_evt.event.tags.iter().find(|t| t.key == "courseId") {
-                alloc::vec![Tag { key: "derived".to_string(), value: alloc::format!("from-{}", course_id.value) }]
-            } else {
-                alloc::vec![]
-            }
-        }).await.unwrap();
+        store
+            .add_tags("CourseCreated", |seq_evt| {
+                if let Some(course_id) = seq_evt.event.tags.iter().find(|t| t.key == "courseId") {
+                    alloc::vec![Tag {
+                        key: "derived".to_string(),
+                        value: alloc::format!("from-{}", course_id.value)
+                    }]
+                } else {
+                    alloc::vec![]
+                }
+            })
+            .await
+            .unwrap();
 
-        let events = store.read_async(Query::all(), None, None, None).await.unwrap();
-        assert!(events[0].event.tags.iter().any(|t| t.key == "derived" && t.value == "from-course-42"));
+        let events = store
+            .read_async(Query::all(), None, None, None)
+            .await
+            .unwrap();
+        assert!(
+            events[0]
+                .event
+                .tags
+                .iter()
+                .any(|t| t.key == "derived" && t.value == "from-course-42")
+        );
     }
 
     #[tokio::test]
@@ -264,7 +377,7 @@ mod tests {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
         let store = Arc::new(OpossumStore::new(storage.clone(), clock));
-        
+
         let result = store.add_tags("", |_| alloc::vec![]).await;
         assert!(matches!(result, Err(Error::IoError)));
     }

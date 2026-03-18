@@ -2,10 +2,10 @@
 
 extern crate alloc;
 
+pub mod decision_model;
 pub mod domain;
 pub mod error;
 pub mod event_store;
 pub mod extensions;
 pub mod ports;
 pub mod projections;
-pub mod decision_model;

@@ -318,11 +318,10 @@ impl<
             } else {
                 candidate_keys = Some(keys);
             }
-            if let Some(existing) = &candidate_keys {
-                if existing.is_empty() {
+            if let Some(existing) = &candidate_keys
+                && existing.is_empty() {
                     return Ok(Vec::new());
                 }
-            }
         }
 
         let mut results = Vec::new();
@@ -375,8 +374,8 @@ impl<
     }
 
     async fn save(&self, key: &str, state: &TState) -> Result<(), Error> {
-        if let Some(provider) = &self.tag_provider {
-            if let Ok(Some(old_state)) = self.get(key).await {
+        if let Some(provider) = &self.tag_provider
+            && let Ok(Some(old_state)) = self.get(key).await {
                 let old_tags = provider.get_tags(&old_state);
                 for tag in old_tags {
                     let dir_path = alloc::format!(
@@ -389,7 +388,6 @@ impl<
                     let _ = self.storage.delete_file(&file_path).await;
                 }
             }
-        }
 
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
@@ -416,8 +414,8 @@ impl<
     }
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
-        if let Some(provider) = &self.tag_provider {
-            if let Ok(Some(old_state)) = self.get(key).await {
+        if let Some(provider) = &self.tag_provider
+            && let Ok(Some(old_state)) = self.get(key).await {
                 let old_tags = provider.get_tags(&old_state);
                 for tag in old_tags {
                     let dir_path = alloc::format!(
@@ -430,7 +428,6 @@ impl<
                     let _ = self.storage.delete_file(&file_path).await;
                 }
             }
-        }
 
         let path = self.get_file_path(key);
         match self.storage.delete_file(&path).await {

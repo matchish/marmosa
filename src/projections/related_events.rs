@@ -47,10 +47,7 @@ mod tests {
         fn event_types(&self) -> Query {
             Query {
                 items: vec![QueryItem {
-                    event_types: vec![
-                        "TestEvent".to_string(),
-                        "TestEventWithRelation".to_string(),
-                    ],
+                    event_types: vec!["TestEvent".to_string(), "TestEventWithRelation".to_string()],
                     tags: vec![],
                 }],
             }
@@ -61,14 +58,17 @@ mod tests {
         }
 
         fn apply(&self, _state: Option<Self::State>, _event: &EventRecord) -> Option<Self::State> {
-            unimplemented!("Projection TestProjectionWithRelatedEvents must implement apply_with_related. The base apply method is hidden/panics.")
+            unimplemented!(
+                "Projection TestProjectionWithRelatedEvents must implement apply_with_related. The base apply method is hidden/panics."
+            )
         }
     }
 
     impl ProjectionWithRelatedEvents for TestProjectionWithRelatedEvents {
         fn get_related_events_query(&self, event: &EventRecord) -> Option<Query> {
             if event.event.event_type == "TestEventWithRelation" {
-                if let Some(related_id_tag) = event.event.tags.iter().find(|t| t.key == "RelatedId") {
+                if let Some(related_id_tag) = event.event.tags.iter().find(|t| t.key == "RelatedId")
+                {
                     return Some(Query {
                         items: vec![QueryItem {
                             tags: vec![Tag {
