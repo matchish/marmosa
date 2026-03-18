@@ -319,9 +319,10 @@ impl<
                 candidate_keys = Some(keys);
             }
             if let Some(existing) = &candidate_keys
-                && existing.is_empty() {
-                    return Ok(Vec::new());
-                }
+                && existing.is_empty()
+            {
+                return Ok(Vec::new());
+            }
         }
 
         let mut results = Vec::new();
@@ -375,19 +376,20 @@ impl<
 
     async fn save(&self, key: &str, state: &TState) -> Result<(), Error> {
         if let Some(provider) = &self.tag_provider
-            && let Ok(Some(old_state)) = self.get(key).await {
-                let old_tags = provider.get_tags(&old_state);
-                for tag in old_tags {
-                    let dir_path = alloc::format!(
-                        "{}/Indices/{}/{}",
-                        self.get_projection_path(),
-                        tag.key.to_lowercase(),
-                        tag.value.to_lowercase()
-                    );
-                    let file_path = alloc::format!("{}/{}.json", dir_path, key);
-                    let _ = self.storage.delete_file(&file_path).await;
-                }
+            && let Ok(Some(old_state)) = self.get(key).await
+        {
+            let old_tags = provider.get_tags(&old_state);
+            for tag in old_tags {
+                let dir_path = alloc::format!(
+                    "{}/Indices/{}/{}",
+                    self.get_projection_path(),
+                    tag.key.to_lowercase(),
+                    tag.value.to_lowercase()
+                );
+                let file_path = alloc::format!("{}/{}.json", dir_path, key);
+                let _ = self.storage.delete_file(&file_path).await;
             }
+        }
 
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
@@ -415,19 +417,20 @@ impl<
 
     async fn delete(&self, key: &str) -> Result<(), Error> {
         if let Some(provider) = &self.tag_provider
-            && let Ok(Some(old_state)) = self.get(key).await {
-                let old_tags = provider.get_tags(&old_state);
-                for tag in old_tags {
-                    let dir_path = alloc::format!(
-                        "{}/Indices/{}/{}",
-                        self.get_projection_path(),
-                        tag.key.to_lowercase(),
-                        tag.value.to_lowercase()
-                    );
-                    let file_path = alloc::format!("{}/{}.json", dir_path, key);
-                    let _ = self.storage.delete_file(&file_path).await;
-                }
+            && let Ok(Some(old_state)) = self.get(key).await
+        {
+            let old_tags = provider.get_tags(&old_state);
+            for tag in old_tags {
+                let dir_path = alloc::format!(
+                    "{}/Indices/{}/{}",
+                    self.get_projection_path(),
+                    tag.key.to_lowercase(),
+                    tag.value.to_lowercase()
+                );
+                let file_path = alloc::format!("{}/{}.json", dir_path, key);
+                let _ = self.storage.delete_file(&file_path).await;
             }
+        }
 
         let path = self.get_file_path(key);
         match self.storage.delete_file(&path).await {

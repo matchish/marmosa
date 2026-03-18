@@ -1,0 +1,173 @@
+use crate::event_store::EventStore;
+use crate::ports::Error;
+
+/// Provides execution orchestration for decision models with automatic retry.
+pub trait DecisionModelExt {
+    /// Executes an operation that modifies the event store, retrying on concurrency conflicts.
+    /// In the event of an AppendConditionFailed error, the operation will be retried
+    /// up to `max_retries` times.
+    fn execute_decision_async<R, F, Fut>(
+        &self,
+        max_retries: usize,
+        operation: F,
+    ) -> impl core::future::Future<Output = Result<R, Error>> + Send
+    where
+        F: Fn(&Self) -> Fut + Send + Sync,
+        Fut: core::future::Future<Output = Result<R, Error>> + Send;
+}
+
+impl<T: EventStore + Send + Sync> DecisionModelExt for T {
+    async fn execute_decision_async<R, F, Fut>(
+        &self,
+        max_retries: usize,
+        operation: F,
+    ) -> Result<R, Error>
+    where
+        F: Fn(&Self) -> Fut + Send + Sync,
+        Fut: core::future::Future<Output = Result<R, Error>> + Send,
+    {
+        let mut attempt = 0;
+        loop {
+            match operation(self).await {
+                Ok(result) => return Ok(result),
+                Err(Error::AppendConditionFailed) if attempt < max_retries - 1 => {
+                    // Retry backoff logic can be implemented here in the future
+                    // Currently we immediately retry (similar to C# initialDelayMs: 0)
+                }
+                // Handle other errors or when max_retries is reached
+                Err(err) => return Err(err),
+            }
+            attempt += 1;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::string::{String, ToString};
+    use alloc::sync::Arc;
+    use alloc::vec::Vec;
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::domain::{AppendCondition, EventData, Query};
+
+    // Minimal stub - the store instance is only passed through to the operation delegate
+    struct StubEventStore;
+
+    impl EventStore for StubEventStore {
+        async fn append_async(
+            &self,
+            _events: Vec<EventData>,
+            _condition: Option<AppendCondition>,
+        ) -> Result<(), Error> {
+            Ok(())
+        }
+
+        async fn read_async(
+            &self,
+            _query: Query,
+            _from_position: Option<u64>,
+            _max_count: Option<usize>,
+            _read_options: Option<Vec<crate::domain::ReadOption>>,
+        ) -> Result<Vec<crate::domain::EventRecord>, Error> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn execute_decision_async_succeeds_on_first_attempt_returns_result() {
+        let store = StubEventStore;
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let count_clone = call_count.clone();
+        let result = store
+            .execute_decision_async(3, |_store| {
+                let counts = count_clone.clone();
+                async move {
+                    counts.fetch_add(1, Ordering::SeqCst);
+                    Ok::<i32, Error>(42)
+                }
+            })
+            .await;
+
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn execute_decision_async_retries_on_append_condition_failed_succeeds_on_second() {
+        let store = StubEventStore;
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let count_clone = call_count.clone();
+        let result = store
+            .execute_decision_async(3, |_store| {
+                let counts = count_clone.clone();
+                async move {
+                    let current = counts.fetch_add(1, Ordering::SeqCst);
+                    if current < 1 {
+                        Err(Error::AppendConditionFailed)
+                    } else {
+                        Ok::<String, Error>("ok".to_string())
+                    }
+                }
+            })
+            .await;
+
+        assert_eq!(result.unwrap(), "ok");
+        assert_eq!(call_count.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn execute_decision_async_rethrows_append_condition_failed_after_max_retries() {
+        let store = StubEventStore;
+
+        let result = store
+            .execute_decision_async(3, |_store| async move {
+                Err::<String, Error>(Error::AppendConditionFailed)
+            })
+            .await;
+
+        assert!(matches!(result, Err(Error::AppendConditionFailed)));
+    }
+
+    #[tokio::test]
+    async fn execute_decision_async_invokes_operation_exactly_max_retries_before_rethrowing() {
+        let store = StubEventStore;
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let count_clone = call_count.clone();
+        let _ = store
+            .execute_decision_async(3, |_store| {
+                let counts = count_clone.clone();
+                async move {
+                    counts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, Error>(Error::AppendConditionFailed)
+                }
+            })
+            .await;
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn execute_decision_async_non_retriable_error_propagates_immediately() {
+        let store = StubEventStore;
+        let call_count = Arc::new(AtomicUsize::new(0));
+
+        let count_clone = call_count.clone();
+        let result = store
+            .execute_decision_async(3, |_store| {
+                let counts = count_clone.clone();
+                async move {
+                    counts.fetch_add(1, Ordering::SeqCst);
+                    Err::<String, Error>(Error::NotFound)
+                }
+            })
+            .await;
+
+        assert!(matches!(result, Err(Error::NotFound)));
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+}
