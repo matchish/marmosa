@@ -139,8 +139,7 @@ async fn save_async_increments_version_on_update() {
         .await
         .unwrap();
     let data1 = storage.read_file(index_path).await.unwrap();
-    let (index1, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data1).unwrap();
+    let index1: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data1).unwrap();
 
     store
         .save(
@@ -153,8 +152,7 @@ async fn save_async_increments_version_on_update() {
         .await
         .unwrap();
     let data2 = storage.read_file(index_path).await.unwrap();
-    let (index2, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data2).unwrap();
+    let index2: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data2).unwrap();
 
     store
         .save(
@@ -167,36 +165,11 @@ async fn save_async_increments_version_on_update() {
         .await
         .unwrap();
     let data3 = storage.read_file(index_path).await.unwrap();
-    let (index3, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data3).unwrap();
+    let index3: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data3).unwrap();
 
-    assert_eq!(
-        index1
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .version,
-        1
-    );
-    assert_eq!(
-        index2
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .version,
-        2
-    );
-    assert_eq!(
-        index3
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .version,
-        3
-    );
+    assert_eq!(index1.get("test-1").unwrap().version, 1);
+    assert_eq!(index2.get("test-1").unwrap().version, 2);
+    assert_eq!(index3.get("test-1").unwrap().version, 3);
 }
 
 #[tokio::test]
@@ -216,8 +189,7 @@ async fn save_async_updates_last_updated_at() {
         .await
         .unwrap();
     let data1 = storage.read_file(index_path).await.unwrap();
-    let (index1, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data1).unwrap();
+    let index1: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data1).unwrap();
 
     clock.advance(100);
 
@@ -232,22 +204,11 @@ async fn save_async_updates_last_updated_at() {
         .await
         .unwrap();
     let data2 = storage.read_file(index_path).await.unwrap();
-    let (index2, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data2).unwrap();
+    let index2: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data2).unwrap();
 
     assert!(
-        index2
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .last_updated_at
-            > index1
-                .iter()
-                .find(|(k, _)| k.as_str() == "test-1")
-                .map(|(_, v)| v)
-                .unwrap()
-                .last_updated_at
+        index2.get("test-1").unwrap().last_updated_at
+            > index1.get("test-1").unwrap().last_updated_at
     );
 }
 
@@ -268,8 +229,7 @@ async fn save_async_maintains_created_at() {
         .await
         .unwrap();
     let data1 = storage.read_file(index_path).await.unwrap();
-    let (index1, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data1).unwrap();
+    let index1: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data1).unwrap();
 
     clock.advance(100);
 
@@ -284,22 +244,11 @@ async fn save_async_maintains_created_at() {
         .await
         .unwrap();
     let data2 = storage.read_file(index_path).await.unwrap();
-    let (index2, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data2).unwrap();
+    let index2: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data2).unwrap();
 
     assert_eq!(
-        index1
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .created_at,
-        index2
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .created_at
+        index1.get("test-1").unwrap().created_at,
+        index2.get("test-1").unwrap().created_at
     );
 }
 
@@ -320,8 +269,7 @@ async fn save_async_updates_size_in_bytes() {
         .await
         .unwrap();
     let data1 = storage.read_file(index_path).await.unwrap();
-    let (index1, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data1).unwrap();
+    let index1: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data1).unwrap();
 
     store
         .save(
@@ -335,22 +283,10 @@ async fn save_async_updates_size_in_bytes() {
         .await
         .unwrap();
     let data2 = storage.read_file(index_path).await.unwrap();
-    let (index2, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data2).unwrap();
+    let index2: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data2).unwrap();
 
     assert!(
-        index2
-            .iter()
-            .find(|(k, _)| k.as_str() == "test-1")
-            .map(|(_, v)| v)
-            .unwrap()
-            .size_in_bytes
-            > index1
-                .iter()
-                .find(|(k, _)| k.as_str() == "test-1")
-                .map(|(_, v)| v)
-                .unwrap()
-                .size_in_bytes
+        index2.get("test-1").unwrap().size_in_bytes > index1.get("test-1").unwrap().size_in_bytes
     );
 }
 
@@ -374,8 +310,7 @@ async fn delete_async_removes_metadata() {
     store.delete("test-1").await.unwrap();
 
     let data = storage.read_file(index_path).await.unwrap();
-    let (index, _): (Vec<(String, ProjectionMetadata)>, _) =
-        serde_json_core::from_slice(&data).unwrap();
+    let index: BTreeMap<String, ProjectionMetadata> = serde_json::from_slice(&data).unwrap();
 
-    assert!(!index.iter().any(|(k, _)| k.as_str() == "test-1"));
+    assert!(!index.contains_key("test-1"));
 }

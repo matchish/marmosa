@@ -123,7 +123,7 @@ where
         let path = self.checkpoint_path();
         match self.storage.read_file(&path).await {
             Ok(data) => {
-                let (checkpoint, _) = serde_json_core::from_slice::<ProjectionCheckpoint>(&data)
+                let checkpoint = serde_json::from_slice::<ProjectionCheckpoint>(&data)
                     .map_err(|_| Error::IoError)?;
                 Ok(Some(checkpoint))
             }
@@ -145,7 +145,7 @@ where
             .create_dir_all("Projections/_checkpoints")
             .await;
         let path = self.checkpoint_path();
-        let data = serde_json_core::to_vec::<_, 512>(&checkpoint).map_err(|_| Error::IoError)?;
+        let data = serde_json::to_vec(&checkpoint).map_err(|_| Error::IoError)?;
         self.storage.write_file(&path, &data).await
     }
 
@@ -396,11 +396,9 @@ impl<
         let path = self.get_file_path(key);
         match self.storage.read_file(&path).await {
             Ok(data) => {
-                if let Ok((wrapper, _)) =
-                    serde_json_core::from_slice::<ProjectionWrapper<TState>>(&data)
-                {
+                if let Ok(wrapper) = serde_json::from_slice::<ProjectionWrapper<TState>>(&data) {
                     Ok(Some(wrapper.data))
-                } else if let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data) {
+                } else if let Ok(state) = serde_json::from_slice::<TState>(&data) {
                     Ok(Some(state))
                 } else {
                     Err(Error::IoError)
@@ -420,11 +418,9 @@ impl<
             if file_path.ends_with(".json")
                 && let Ok(data) = self.storage.read_file(&file_path).await
             {
-                if let Ok((wrapper, _)) =
-                    serde_json_core::from_slice::<ProjectionWrapper<TState>>(&data)
-                {
+                if let Ok(wrapper) = serde_json::from_slice::<ProjectionWrapper<TState>>(&data) {
                     results.push(wrapper.data);
-                } else if let Ok((state, _)) = serde_json_core::from_slice::<TState>(&data) {
+                } else if let Ok(state) = serde_json::from_slice::<TState>(&data) {
                     results.push(state);
                 }
             }
@@ -463,49 +459,42 @@ impl<
         };
 
         let metadata_index_path = alloc::format!("{}/index.json", metadata_dir);
-        let mut metadata_index: alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)> =
-            if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
-                if let Ok((map, _)) = serde_json_core::from_slice(&data) {
-                    map
-                } else {
-                    alloc::vec::Vec::new()
-                }
-            } else {
-                alloc::vec::Vec::new()
-            };
+        let mut metadata_index: alloc::collections::BTreeMap<
+            alloc::string::String,
+            ProjectionMetadata,
+        > = if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
+            serde_json::from_slice(&data).unwrap_or_default()
+        } else {
+            alloc::collections::BTreeMap::new()
+        };
 
-        let mut current_metadata =
-            if let Some((_, meta)) = metadata_index.iter().find(|(k, _)| k == key) {
-                let mut m = meta.clone();
-                m.version += 1;
-                m.last_updated_at = now;
-                m
-            } else {
-                ProjectionMetadata {
-                    created_at: now,
-                    last_updated_at: now,
-                    version: 1,
-                    size_in_bytes: 0,
-                }
-            };
+        let mut current_metadata = if let Some(meta) = metadata_index.get(key) {
+            let mut m = meta.clone();
+            m.version += 1;
+            m.last_updated_at = now;
+            m
+        } else {
+            ProjectionMetadata {
+                created_at: now,
+                last_updated_at: now,
+                version: 1,
+                size_in_bytes: 0,
+            }
+        };
 
         let wrapper = ProjectionWrapper {
             data: state.clone(),
             metadata: current_metadata.clone(),
         };
 
-        let data = serde_json_core::to_vec::<_, 16384>(&wrapper).map_err(|_| Error::IoError)?;
+        let data = serde_json::to_vec(&wrapper).map_err(|_| Error::IoError)?;
         current_metadata.size_in_bytes = data.len() as u64;
 
         self.storage.write_file(&path, data.as_slice()).await?;
 
-        if let Some(pos) = metadata_index.iter().position(|(k, _)| k == key) {
-            metadata_index[pos] = (alloc::string::String::from(key), current_metadata.clone());
-        } else {
-            metadata_index.push((alloc::string::String::from(key), current_metadata.clone()));
-        }
+        metadata_index.insert(alloc::string::String::from(key), current_metadata.clone());
 
-        if let Ok(index_data) = serde_json_core::to_vec::<_, 65536>(&metadata_index) {
+        if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
             let _ = self
                 .storage
                 .write_file(&metadata_index_path, index_data.as_slice())
@@ -549,13 +538,12 @@ impl<
         let metadata_index_path =
             alloc::format!("{}/Metadata/index.json", self.get_projection_path());
         if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
-            if let Ok((mut metadata_index, _)) = serde_json_core::from_slice::<
-                alloc::vec::Vec<(alloc::string::String, ProjectionMetadata)>,
+            if let Ok(mut metadata_index) = serde_json::from_slice::<
+                alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>,
             >(&data)
             {
-                if let Some(pos) = metadata_index.iter().position(|(k, _)| k == key) {
-                    metadata_index.remove(pos);
-                    if let Ok(index_data) = serde_json_core::to_vec::<_, 65536>(&metadata_index) {
+                if metadata_index.remove(key).is_some() {
+                    if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
                         let _ = self
                             .storage
                             .write_file(&metadata_index_path, index_data.as_slice())
@@ -620,7 +608,7 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
             keys.push(alloc::string::String::from(projection_key));
             // C# implementation uses temp file + rename, here we'll just write directly.
             // In a real implementation this would need atomicity.
-            if let Ok(data) = serde_json_core::to_vec::<_, 4096>(&keys) {
+            if let Ok(data) = serde_json::to_vec(&keys) {
                 let _ = self.storage.write_file(&index_path, &data).await;
             }
         }
@@ -652,7 +640,7 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
         if keys.len() != original_len {
             if keys.is_empty() {
                 let _ = self.storage.delete_file(&index_path).await;
-            } else if let Ok(data) = serde_json_core::to_vec::<_, 4096>(&keys) {
+            } else if let Ok(data) = serde_json::to_vec(&keys) {
                 let _ = self.storage.write_file(&index_path, &data).await;
             }
         }
@@ -752,8 +740,8 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
         match self.storage.read_file(path).await {
             Ok(data) => {
                 // If parsing fails, C# treats it as empty index.
-                match serde_json_core::from_slice::<Vec<String>>(&data) {
-                    Ok((keys, _)) => Ok(keys),
+                match serde_json::from_slice::<Vec<String>>(&data) {
+                    Ok(keys) => Ok(keys),
                     Err(_) => Ok(Vec::new()),
                 }
             }
@@ -816,7 +804,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         let mut index = self.read_index(&index_path).await.unwrap_or_default();
         index.insert(alloc::string::String::from(key), metadata);
 
-        if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&index) {
+        if let Ok(data) = serde_json::to_vec(&index) {
             let _ = self.storage.write_file(&index_path, &data).await;
         }
 
@@ -877,7 +865,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         if index.remove(key).is_some() {
             if index.is_empty() {
                 let _ = self.storage.delete_file(&index_path).await;
-            } else if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&index) {
+            } else if let Ok(data) = serde_json::to_vec(&index) {
                 let _ = self.storage.write_file(&index_path, &data).await;
             }
         }
@@ -905,11 +893,10 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
     > {
         match self.storage.read_file(path).await {
             Ok(data) => {
-                match serde_json_core::from_slice::<
-                    alloc::collections::BTreeMap<&str, ProjectionMetadata>,
-                >(&data)
-                {
-                    Ok((index, _)) => {
+                match serde_json::from_slice::<alloc::collections::BTreeMap<&str, ProjectionMetadata>>(
+                    &data,
+                ) {
+                    Ok(index) => {
                         let mut string_index = alloc::collections::BTreeMap::new();
                         for (k, v) in index {
                             string_index.insert(alloc::string::String::from(k), v);

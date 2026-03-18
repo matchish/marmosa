@@ -28,8 +28,8 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
                 if data.is_empty() {
                     return Ok(0);
                 }
-                match serde_json_core::from_slice::<LedgerData>(&data) {
-                    Ok((ledger, _)) => Ok(ledger.last_sequence_position),
+                match serde_json::from_slice::<LedgerData>(&data) {
+                    Ok(ledger) => Ok(ledger.last_sequence_position),
                     Err(_) => Err(crate::ports::Error::IoError), // Corrupt ledger
                 }
             }
@@ -67,8 +67,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
             last_sequence_position: position,
             event_count: position,
         };
-        let vec =
-            serde_json_core::to_vec::<_, 1024>(&data).map_err(|_| crate::ports::Error::IoError)?;
+        let vec = serde_json::to_vec(&data).map_err(|_| crate::ports::Error::IoError)?;
         self.storage.write_file(&path, &vec).await?;
         Ok(())
     }

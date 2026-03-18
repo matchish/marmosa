@@ -85,7 +85,7 @@ async fn append_after_crash_preserves_orphaned_events_and_allocates_next_positio
 
     // Write directly using storage backend to bypass store.
     let event_file_path = format!("{}/0000000003.json", events_path);
-    let serialized = serde_json_core::to_vec::<_, 2048>(&orphaned_sequenced).unwrap();
+    let serialized = serde_json::to_vec(&orphaned_sequenced).unwrap();
     storage
         .write_file(&event_file_path, &serialized)
         .await
@@ -193,7 +193,7 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
 
         // Write directly bypass store.
         let event_file_path = format!("{}/{:010}.json", events_path, i);
-        let serialized = serde_json_core::to_vec::<_, 2048>(&orphan).unwrap();
+        let serialized = serde_json::to_vec(&orphan).unwrap();
         storage
             .write_file(&event_file_path, &serialized)
             .await

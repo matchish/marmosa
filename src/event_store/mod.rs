@@ -14,7 +14,7 @@ pub use options::*;
 
 use alloc::format;
 use alloc::vec::Vec;
-use serde_json_core::to_vec;
+use serde_json::to_vec;
 
 use crate::domain::AppendCondition;
 use crate::domain::EventData;
@@ -93,8 +93,8 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
         for current_pos in filtered_positions {
             let file_path = format!("{}/{:010}.json", dir_path, current_pos);
             let data = self.storage.read_file(&file_path).await?;
-            let (record, _) =
-                serde_json_core::from_slice::<EventRecord>(&data).map_err(|_| Error::IoError)?;
+            let record =
+                serde_json::from_slice::<EventRecord>(&data).map_err(|_| Error::IoError)?;
 
             if query.matches(&record) {
                 results.push(record);
@@ -160,7 +160,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Opo
                     timestamp,
                 };
 
-                let vec = to_vec::<_, 4096>(&record).map_err(|_| Error::IoError)?; // Map error appropriately
+                let vec = serde_json::to_vec(&record).map_err(|_| Error::IoError)?; // Map error appropriately
 
                 let file_path = format!("{}/{:010}.json", dir_path, sequence);
                 self.storage.write_file(&file_path, &vec).await?;

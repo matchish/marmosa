@@ -112,7 +112,7 @@ impl<T: serde::Serialize> ToDomainEventExt for T {
             .split("::")
             .last()
             .unwrap_or("UnknownType");
-        let data = serde_json_core::to_vec::<_, 4096>(self)
+        let data = serde_json::to_vec(self)
             .map(|v| {
                 alloc::string::String::from_utf8(v.to_vec())
                     .unwrap_or_else(|_| alloc::string::String::from("{}"))

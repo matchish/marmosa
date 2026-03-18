@@ -69,8 +69,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintena
                 tags_added += added_for_this_event;
 
                 // Rewrite event to file
-                let vec =
-                    serde_json_core::to_vec::<_, 4096>(&record).map_err(|_| Error::IoError)?;
+                let vec = serde_json::to_vec(&record).map_err(|_| Error::IoError)?;
                 let file_path = alloc::format!("Events/{:010}.json", record.position);
                 let _ = self.storage.write_file(&file_path, &vec).await;
             }

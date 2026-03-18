@@ -51,8 +51,12 @@ impl<S: crate::ports::StorageBackend> EventFileManager<S> {
         let _ = self.storage.create_dir_all(events_path).await;
 
         let mut data = [0u8; 1024];
-        let bytes_written = serde_json_core::to_slice(event, &mut data)
-            .map_err(|_| crate::ports::Error::IoError)?;
+        let json_bytes = serde_json::to_vec(event).map_err(|_| crate::ports::Error::IoError)?;
+        let bytes_written = json_bytes.len();
+        if bytes_written > data.len() {
+            return Err(crate::ports::Error::IoError);
+        }
+        data[..bytes_written].copy_from_slice(&json_bytes);
 
         self.storage
             .write_file(&path, &data[..bytes_written])
@@ -68,8 +72,8 @@ impl<S: crate::ports::StorageBackend> EventFileManager<S> {
         let path = self.get_event_file_path(events_path, position)?;
         let data = self.storage.read_file(&path).await?;
 
-        match serde_json_core::from_slice::<crate::domain::EventRecord>(&data) {
-            Ok((evt, _)) => Ok(evt),
+        match serde_json::from_slice::<crate::domain::EventRecord>(&data) {
+            Ok(evt) => Ok(evt),
             Err(_) => Err(crate::ports::Error::IoError),
         }
     }

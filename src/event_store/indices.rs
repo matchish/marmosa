@@ -37,8 +37,8 @@ impl<S: crate::ports::StorageBackend + Send + Sync> TagIndex<S> {
 
         let mut positions = match self.storage.read_file(&file_path).await {
             Ok(data) => {
-                match serde_json_core::from_slice::<alloc::vec::Vec<u64>>(&data) {
-                    Ok((pos, _)) => pos,
+                match serde_json::from_slice::<alloc::vec::Vec<u64>>(&data) {
+                    Ok(pos) => pos,
                     Err(_) => alloc::vec::Vec::new(), // corruption recovery
                 }
             }
@@ -48,7 +48,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> TagIndex<S> {
         if !positions.contains(&position) {
             positions.push(position);
             positions.sort_unstable();
-            if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&positions) {
+            if let Ok(data) = serde_json::to_vec(&positions) {
                 let _ = self.storage.write_file(&file_path, &data).await;
             }
         }
@@ -64,8 +64,8 @@ impl<S: crate::ports::StorageBackend + Send + Sync> TagIndex<S> {
     ) -> Result<alloc::vec::Vec<u64>, crate::ports::Error> {
         let file_path = self.get_file_path(root_path, tag);
         match self.storage.read_file(&file_path).await {
-            Ok(data) => match serde_json_core::from_slice::<alloc::vec::Vec<u64>>(&data) {
-                Ok((pos, _)) => Ok(pos),
+            Ok(data) => match serde_json::from_slice::<alloc::vec::Vec<u64>>(&data) {
+                Ok(pos) => Ok(pos),
                 Err(_) => Ok(alloc::vec::Vec::new()),
             },
             Err(_) => Ok(alloc::vec::Vec::new()),
@@ -116,8 +116,8 @@ impl<S: crate::ports::StorageBackend + Send + Sync> EventTypeIndex<S> {
 
         let mut positions = match self.storage.read_file(&file_path).await {
             Ok(data) => {
-                match serde_json_core::from_slice::<alloc::vec::Vec<u64>>(&data) {
-                    Ok((pos, _)) => pos,
+                match serde_json::from_slice::<alloc::vec::Vec<u64>>(&data) {
+                    Ok(pos) => pos,
                     Err(_) => alloc::vec::Vec::new(), // corruption recovery
                 }
             }
@@ -127,7 +127,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> EventTypeIndex<S> {
         if !positions.contains(&position) {
             positions.push(position);
             positions.sort_unstable();
-            if let Ok(data) = serde_json_core::to_vec::<_, 16384>(&positions) {
+            if let Ok(data) = serde_json::to_vec(&positions) {
                 let _ = self.storage.write_file(&file_path, &data).await;
             }
         }
@@ -143,8 +143,8 @@ impl<S: crate::ports::StorageBackend + Send + Sync> EventTypeIndex<S> {
     ) -> Result<alloc::vec::Vec<u64>, crate::ports::Error> {
         let file_path = self.get_file_path(root_path, event_type);
         match self.storage.read_file(&file_path).await {
-            Ok(data) => match serde_json_core::from_slice::<alloc::vec::Vec<u64>>(&data) {
-                Ok((pos, _)) => Ok(pos),
+            Ok(data) => match serde_json::from_slice::<alloc::vec::Vec<u64>>(&data) {
+                Ok(pos) => Ok(pos),
                 Err(_) => Ok(alloc::vec::Vec::new()),
             },
             Err(_) => Ok(alloc::vec::Vec::new()),
