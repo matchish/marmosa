@@ -1,5 +1,7 @@
 pub mod options;
+pub mod related_events;
 pub use options::*;
+pub use related_events::*;
 
 use alloc::string::String;
 use alloc::vec::Vec;
