@@ -1,9 +1,11 @@
+pub mod admin;
 pub mod files;
 pub mod indices;
 pub mod initializer;
 pub mod ledger;
 pub mod options;
 
+pub use admin::*;
 pub use files::*;
 pub use indices::*;
 pub use initializer::*;

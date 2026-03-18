@@ -39,8 +39,14 @@ impl<TState> ProjectionTagProvider<TState> for NoopProjectionTagProvider {
 }
 
 pub trait ProjectionStore<TState> {
-    fn query_by_tag(&self, tag: &crate::domain::Tag) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
-    fn query_by_tags(&self, tags: &[crate::domain::Tag]) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
+    fn query_by_tag(
+        &self,
+        tag: &crate::domain::Tag,
+    ) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
+    fn query_by_tags(
+        &self,
+        tags: &[crate::domain::Tag],
+    ) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
     fn get(
         &self,
         key: &str,
@@ -206,10 +212,7 @@ pub struct StorageBackendProjectionStore<S, TState, TTagProvider = NoopProjectio
     _marker: core::marker::PhantomData<TState>,
 }
 
-impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
-
-}
-
+impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {}
 
 impl<S, TState, P> StorageBackendProjectionStore<S, TState, P> {
     fn get_projection_path(&self) -> String {
@@ -231,7 +234,11 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
         }
     }
 
-    pub fn new_with_tag_provider<P>(storage: S, projection_name: String, tag_provider: P) -> StorageBackendProjectionStore<S, TState, P> {
+    pub fn new_with_tag_provider<P>(
+        storage: S,
+        projection_name: String,
+        tag_provider: P,
+    ) -> StorageBackendProjectionStore<S, TState, P> {
         StorageBackendProjectionStore {
             storage,
             projection_name,
@@ -239,14 +246,21 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
             _marker: core::marker::PhantomData,
         }
     }
-
 }
 
-impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'de> + Send + Sync, TTagProvider: ProjectionTagProvider<TState> + Send + Sync>
-    ProjectionStore<TState> for StorageBackendProjectionStore<S, TState, TTagProvider>
+impl<
+    S: StorageBackend + Send + Sync,
+    TState: Serialize + for<'de> Deserialize<'de> + Send + Sync,
+    TTagProvider: ProjectionTagProvider<TState> + Send + Sync,
+> ProjectionStore<TState> for StorageBackendProjectionStore<S, TState, TTagProvider>
 {
     async fn query_by_tag(&self, tag: &crate::domain::Tag) -> Result<Vec<TState>, Error> {
-        let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+        let dir_path = alloc::format!(
+            "{}/Indices/{}/{}",
+            self.get_projection_path(),
+            tag.key.to_lowercase(),
+            tag.value.to_lowercase()
+        );
         let mut results = Vec::new();
         if let Ok(files) = self.storage.read_dir(&dir_path).await {
             let mut keys = Vec::new();
@@ -277,7 +291,12 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
         let mut candidate_keys: Option<alloc::collections::BTreeSet<alloc::string::String>> = None;
 
         for tag in tags {
-            let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+            let dir_path = alloc::format!(
+                "{}/Indices/{}/{}",
+                self.get_projection_path(),
+                tag.key.to_lowercase(),
+                tag.value.to_lowercase()
+            );
             let mut keys = alloc::collections::BTreeSet::new();
             if let Ok(files) = self.storage.read_dir(&dir_path).await {
                 for file in files {
@@ -358,7 +377,12 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
             if let Ok(Some(old_state)) = self.get(key).await {
                 let old_tags = provider.get_tags(&old_state);
                 for tag in old_tags {
-                    let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                    let dir_path = alloc::format!(
+                        "{}/Indices/{}/{}",
+                        self.get_projection_path(),
+                        tag.key.to_lowercase(),
+                        tag.value.to_lowercase()
+                    );
                     let file_path = alloc::format!("{}/{}.json", dir_path, key);
                     let _ = self.storage.delete_file(&file_path).await;
                 }
@@ -375,7 +399,12 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
         if let Some(provider) = &self.tag_provider {
             let new_tags = provider.get_tags(state);
             for tag in new_tags {
-                let tag_dir = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                let tag_dir = alloc::format!(
+                    "{}/Indices/{}/{}",
+                    self.get_projection_path(),
+                    tag.key.to_lowercase(),
+                    tag.value.to_lowercase()
+                );
                 let _ = self.storage.create_dir_all(&tag_dir).await;
                 let tag_file = alloc::format!("{}/{}.json", tag_dir, key);
                 let _ = self.storage.write_file(&tag_file, b"").await;
@@ -389,7 +418,12 @@ impl<S: StorageBackend + Send + Sync, TState: Serialize + for<'de> Deserialize<'
             if let Ok(Some(old_state)) = self.get(key).await {
                 let old_tags = provider.get_tags(&old_state);
                 for tag in old_tags {
-                    let dir_path = alloc::format!("{}/Indices/{}/{}", self.get_projection_path(), tag.key.to_lowercase(), tag.value.to_lowercase());
+                    let dir_path = alloc::format!(
+                        "{}/Indices/{}/{}",
+                        self.get_projection_path(),
+                        tag.key.to_lowercase(),
+                        tag.value.to_lowercase()
+                    );
                     let file_path = alloc::format!("{}/{}.json", dir_path, key);
                     let _ = self.storage.delete_file(&file_path).await;
                 }

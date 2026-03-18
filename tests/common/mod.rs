@@ -60,6 +60,40 @@ impl StorageBackend for InMemoryStorage {
         }
     }
 
+    async fn delete_dir_all(&self, path: &str) -> Result<(), Error> {
+        let mut files = self.files.lock().unwrap();
+        let mut dirs = self.dirs.lock().unwrap();
+
+        let prefix = if path.ends_with('/') {
+            path.to_string()
+        } else {
+            format!("{}/", path)
+        };
+
+        // Collect keys to remove
+        let file_keys: Vec<String> = files
+            .keys()
+            .filter(|k| k.starts_with(&prefix) || **k == *path)
+            .cloned()
+            .collect();
+
+        for k in file_keys {
+            files.remove(&k);
+        }
+
+        let dir_keys: Vec<String> = dirs
+            .keys()
+            .filter(|k| k.starts_with(&prefix) || **k == *path)
+            .cloned()
+            .collect();
+
+        for k in dir_keys {
+            dirs.remove(&k);
+        }
+
+        Ok(())
+    }
+
     async fn read_dir(&self, path: &str) -> Result<Vec<String>, Error> {
         let files = self.files.lock().unwrap();
         let mut result = Vec::new();

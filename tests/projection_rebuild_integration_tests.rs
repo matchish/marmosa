@@ -329,12 +329,11 @@ async fn rebuild_projection_with_deletion_removes_projection() {
     assert!(state.is_none());
 }
 
-
 #[tokio::test]
 async fn rebuild_projection_with_multiple_instances_builds_all() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
+
     let mut account_ids = vec![];
     for i in 0..10 {
         account_ids.push(format!("acc-{}", i));
@@ -349,19 +348,25 @@ async fn rebuild_projection_with_multiple_instances_builds_all() {
                 account_id: id.clone(),
                 owner_name: format!("Account {}", index),
                 initial_balance: 100.0 * (index as f64 + 1.0),
-            }
+            },
         ));
     }
 
     store.append_async(events, None).await.unwrap();
 
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 
-    let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    
+    let p_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+
     for (i, id) in account_ids.iter().enumerate() {
         let account: AccountBalanceState = p_store.get(id).await.unwrap().unwrap();
         assert_eq!(account.balance, 100.0 * (i as f64 + 1.0));
@@ -372,26 +377,61 @@ async fn rebuild_projection_with_multiple_instances_builds_all() {
 async fn rebuild_projection_with_event_ordering_processes_in_order() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
+
     let account_id = "acc-ordering".to_string();
 
     let events = vec![
-        create_event("AccountCreatedEvent", &account_id, &AccountCreated { account_id: account_id.clone(), owner_name: "Test".to_string(), initial_balance: 0.0 }),
-        create_event("MoneyDepositedEvent", &account_id, &MoneyDeposited { account_id: account_id.clone(), amount: 100.0 }),
-        create_event("MoneyWithdrawnEvent", &account_id, &MoneyWithdrawn { account_id: account_id.clone(), amount: 50.0 }),
-        create_event("MoneyDepositedEvent", &account_id, &MoneyDeposited { account_id: account_id.clone(), amount: 75.0 }),
+        create_event(
+            "AccountCreatedEvent",
+            &account_id,
+            &AccountCreated {
+                account_id: account_id.clone(),
+                owner_name: "Test".to_string(),
+                initial_balance: 0.0,
+            },
+        ),
+        create_event(
+            "MoneyDepositedEvent",
+            &account_id,
+            &MoneyDeposited {
+                account_id: account_id.clone(),
+                amount: 100.0,
+            },
+        ),
+        create_event(
+            "MoneyWithdrawnEvent",
+            &account_id,
+            &MoneyWithdrawn {
+                account_id: account_id.clone(),
+                amount: 50.0,
+            },
+        ),
+        create_event(
+            "MoneyDepositedEvent",
+            &account_id,
+            &MoneyDeposited {
+                account_id: account_id.clone(),
+                amount: 75.0,
+            },
+        ),
     ];
 
     store.append_async(events, None).await.unwrap();
 
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 
-    let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let p_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
     let account: AccountBalanceState = p_store.get(&account_id).await.unwrap().unwrap();
-    
+
     assert_eq!(account.balance, 125.0); // 0 + 100 - 50 + 75
     assert_eq!(account.transaction_count, 4);
 }
@@ -400,15 +440,21 @@ async fn rebuild_projection_with_event_ordering_processes_in_order() {
 async fn rebuild_projection_with_no_events_creates_no_instances() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 
-    let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let p_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
     let all_accounts: Vec<AccountBalanceState> = p_store.get_all().await.unwrap();
-    
+
     assert!(all_accounts.is_empty());
 }
 
@@ -416,9 +462,14 @@ async fn rebuild_projection_with_no_events_creates_no_instances() {
 async fn rebuild_projection_on_empty_store_writes_checkpoint_file() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 
@@ -430,28 +481,52 @@ async fn rebuild_projection_on_empty_store_writes_checkpoint_file() {
 async fn rebuild_projection_with_partial_batches_processes_all_events() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
+
     let account_id = "acc-batches".to_string();
 
     let mut events = vec![];
-    events.push(create_event("AccountCreatedEvent", &account_id, &AccountCreated { account_id: account_id.clone(), owner_name: "Test".to_string(), initial_balance: 0.0 }));
-    
+    events.push(create_event(
+        "AccountCreatedEvent",
+        &account_id,
+        &AccountCreated {
+            account_id: account_id.clone(),
+            owner_name: "Test".to_string(),
+            initial_balance: 0.0,
+        },
+    ));
+
     for _ in 0..150 {
-        events.push(create_event("MoneyDepositedEvent", &account_id, &MoneyDeposited { account_id: account_id.clone(), amount: 1.0 }));
+        events.push(create_event(
+            "MoneyDepositedEvent",
+            &account_id,
+            &MoneyDeposited {
+                account_id: account_id.clone(),
+                amount: 1.0,
+            },
+        ));
     }
 
     for chunk in events.chunks(50) {
-        store.append_async(chunk.iter().cloned().collect(), None).await.unwrap();
+        store
+            .append_async(chunk.iter().cloned().collect(), None)
+            .await
+            .unwrap();
     }
 
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 
-    let p_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let p_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
     let account: AccountBalanceState = p_store.get(&account_id).await.unwrap().unwrap();
-    
+
     assert_eq!(account.balance, 150.0);
     assert_eq!(account.transaction_count, 151); // 150 + 1
 }
@@ -460,18 +535,38 @@ async fn rebuild_projection_with_partial_batches_processes_all_events() {
 async fn get_checkpoint_returns_last_processed_position() {
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
-    
+
     let account_id = "acc-cp".to_string();
 
     let events = vec![
-        create_event("AccountCreatedEvent", &account_id, &AccountCreated { account_id: account_id.clone(), owner_name: "Test".to_string(), initial_balance: 100.0 }),
-        create_event("MoneyDepositedEvent", &account_id, &MoneyDeposited { account_id: account_id.clone(), amount: 50.0 }),
+        create_event(
+            "AccountCreatedEvent",
+            &account_id,
+            &AccountCreated {
+                account_id: account_id.clone(),
+                owner_name: "Test".to_string(),
+                initial_balance: 100.0,
+            },
+        ),
+        create_event(
+            "MoneyDepositedEvent",
+            &account_id,
+            &MoneyDeposited {
+                account_id: account_id.clone(),
+                amount: 50.0,
+            },
+        ),
     ];
 
     store.append_async(events, None).await.unwrap();
 
-    let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
-    let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
+    let projection_store =
+        StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
+    let runner = ProjectionRunner::new(
+        Arc::clone(&storage),
+        AccountBalanceProjection,
+        projection_store,
+    );
 
     runner.rebuild(&store).await.unwrap();
 

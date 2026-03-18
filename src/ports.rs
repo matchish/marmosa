@@ -16,6 +16,7 @@ pub trait StorageBackend {
     fn write_file(&self, path: &str, data: &[u8])
     -> impl Future<Output = Result<(), Error>> + Send;
     fn delete_file(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
+    fn delete_dir_all(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
     fn read_dir(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Error>> + Send;
 
     /// Acquires an exclusive lock for the given stream.
@@ -49,6 +50,10 @@ impl<T: ?Sized + StorageBackend + Send + Sync> StorageBackend for alloc::sync::A
 
     fn delete_file(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send {
         (**self).delete_file(path)
+    }
+
+    fn delete_dir_all(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send {
+        (**self).delete_dir_all(path)
     }
 
     fn read_dir(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Error>> + Send {
@@ -134,6 +139,40 @@ pub mod tests {
             } else {
                 Err(Error::NotFound)
             }
+        }
+
+        async fn delete_dir_all(&self, path: &str) -> Result<(), Error> {
+            let mut files = self.files.lock().unwrap();
+            let mut dirs = self.dirs.lock().unwrap();
+
+            let prefix = if path.ends_with('/') {
+                path.to_string()
+            } else {
+                format!("{}/", path)
+            };
+
+            // Collect keys to remove
+            let file_keys: Vec<String> = files
+                .keys()
+                .filter(|k| k.starts_with(&prefix) || **k == *path)
+                .cloned()
+                .collect();
+
+            for k in file_keys {
+                files.remove(&k);
+            }
+
+            let dir_keys: Vec<String> = dirs
+                .keys()
+                .filter(|k| k.starts_with(&prefix) || **k == *path)
+                .cloned()
+                .collect();
+
+            for k in dir_keys {
+                dirs.remove(&k);
+            }
+
+            Ok(())
         }
 
         async fn read_dir(&self, path: &str) -> Result<Vec<String>, Error> {
