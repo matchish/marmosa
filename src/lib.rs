@@ -8,3 +8,4 @@ pub mod event_store;
 pub mod extensions;
 pub mod ports;
 pub mod projections;
+pub mod decision_model;
