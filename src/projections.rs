@@ -1,3 +1,58 @@
+//! Projection infrastructure and tag-based indexing helpers.
+//!
+//! # Overview
+//!
+//! Projections turn event streams into queryable state. When a projection store is configured
+//! with a [`ProjectionTagProvider`], each saved projection state can also be indexed by tags.
+//! This enables efficient lookups with [`ProjectionStore::query_by_tag`] and
+//! [`ProjectionStore::query_by_tags`] instead of loading all projection states and filtering in
+//! memory.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use marmosa::domain::Tag;
+//! use marmosa::projections::ProjectionTagProvider;
+//!
+//! #[derive(Clone)]
+//! struct StudentState {
+//!     tier: String,
+//!     is_maxed_out: bool,
+//! }
+//!
+//! struct StudentTagProvider;
+//!
+//! impl ProjectionTagProvider<StudentState> for StudentTagProvider {
+//!     fn get_tags(&self, state: &StudentState) -> Vec<Tag> {
+//!         vec![
+//!             Tag {
+//!                 key: "Tier".to_string(),
+//!                 value: state.tier.clone(),
+//!             },
+//!             Tag {
+//!                 key: "IsMaxedOut".to_string(),
+//!                 value: state.is_maxed_out.to_string(),
+//!             },
+//!         ]
+//!     }
+//! }
+//!
+//! let provider = StudentTagProvider;
+//! let tags = provider.get_tags(&StudentState {
+//!     tier: "Premium".to_string(),
+//!     is_maxed_out: true,
+//! });
+//!
+//! assert!(tags.iter().any(|t| t.key == "Tier" && t.value == "Premium"));
+//! assert!(tags.iter().any(|t| t.key == "IsMaxedOut" && t.value == "true"));
+//! ```
+//!
+//! # Notes
+//!
+//! - Tag keys and values are normalized to lowercase in the default storage-backed projection
+//!   store before writing index files.
+//! - Multi-tag queries use set intersection semantics (`AND`).
+
 pub mod options;
 pub mod related_events;
 pub use options::*;
@@ -39,6 +94,39 @@ pub trait ProjectionDefinition {
 
 /// Storage interface for projection state - can be implemented for different backends
 pub trait ProjectionTagProvider<TState> {
+    /// Returns the tags that should be indexed for a projection state.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use marmosa::domain::Tag;
+    /// use marmosa::projections::ProjectionTagProvider;
+    ///
+    /// #[derive(Clone)]
+    /// struct State {
+    ///     status: String,
+    /// }
+    ///
+    /// struct Provider;
+    ///
+    /// impl ProjectionTagProvider<State> for Provider {
+    ///     fn get_tags(&self, state: &State) -> Vec<Tag> {
+    ///         vec![Tag {
+    ///             key: "Status".to_string(),
+    ///             value: state.status.clone(),
+    ///         }]
+    ///     }
+    /// }
+    ///
+    /// let provider = Provider;
+    /// let tags = provider.get_tags(&State {
+    ///     status: "Active".to_string(),
+    /// });
+    ///
+    /// assert_eq!(tags.len(), 1);
+    /// assert_eq!(tags[0].key, "Status");
+    /// assert_eq!(tags[0].value, "Active");
+    /// ```
     fn get_tags(&self, state: &TState) -> Vec<crate::domain::Tag>;
 }
 
@@ -59,10 +147,59 @@ impl<TState> ProjectionTagProvider<TState> for NoopProjectionTagProvider {
 }
 
 pub trait ProjectionStore<TState> {
+    /// Returns all projection states matching a single tag.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::domain::Tag;
+    /// use marmosa::ports::Error;
+    /// use marmosa::projections::ProjectionStore;
+    ///
+    /// async fn load_premium<S, T>(store: &S) -> Result<Vec<T>, Error>
+    /// where
+    ///     S: ProjectionStore<T>,
+    /// {
+    ///     store
+    ///         .query_by_tag(&Tag {
+    ///             key: "Tier".to_string(),
+    ///             value: "Premium".to_string(),
+    ///         })
+    ///         .await
+    /// }
+    /// ```
     fn query_by_tag(
         &self,
         tag: &crate::domain::Tag,
     ) -> impl core::future::Future<Output = Result<Vec<TState>, Error>> + Send;
+
+    /// Returns all projection states that match every provided tag (`AND` semantics).
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::domain::Tag;
+    /// use marmosa::ports::Error;
+    /// use marmosa::projections::ProjectionStore;
+    ///
+    /// async fn load_premium_and_maxed_out<S, T>(store: &S) -> Result<Vec<T>, Error>
+    /// where
+    ///     S: ProjectionStore<T>,
+    /// {
+    ///     let tags = vec![
+    ///         Tag {
+    ///             key: "Tier".to_string(),
+    ///             value: "Premium".to_string(),
+    ///         },
+    ///         Tag {
+    ///             key: "IsMaxedOut".to_string(),
+    ///             value: "true".to_string(),
+    ///         },
+    ///     ];
+    ///
+    ///     store.query_by_tags(&tags).await
+    /// }
+    /// ```
     fn query_by_tags(
         &self,
         tags: &[crate::domain::Tag],
