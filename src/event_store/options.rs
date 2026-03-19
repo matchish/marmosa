@@ -1,4 +1,22 @@
+//! Configuration types for creating a single Marmosa event-store instance.
+//!
+//! # Overview
+//!
+//! A single [`OpossumOptions`] value models one configured store. Calling
+//! [`OpossumOptions::use_store`] sets the store name exactly once.
+//!
+//! This keeps storage layout explicit: one store directory under one root path
+//! per options value.
+
 #[derive(Debug, Clone)]
+/// Runtime configuration for one event-store instance.
+///
+/// # Notes
+///
+/// - `root_path` must be absolute (validated by [`Self::validate`]).
+/// - `store_name` is intentionally optional during construction and must be set
+///   with [`Self::use_store`] before validation passes.
+/// - One options value supports one store name.
 pub struct OpossumOptions {
     pub root_path: alloc::string::String,
     pub store_name: Option<alloc::string::String>,
@@ -14,6 +32,34 @@ impl OpossumOptions {
         }
     }
 
+    /// Sets the store name for this options value.
+    ///
+    /// The method may be called only once. A second call panics to make the
+    /// single-store-per-options contract explicit.
+    ///
+    /// # Panics
+    ///
+    /// Panics when:
+    /// - called more than once,
+    /// - `name` is empty/whitespace,
+    /// - `name` contains path separator or invalid filesystem characters.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use marmosa::event_store::OpossumOptions;
+    ///
+    /// let options = OpossumOptions::new("/var/lib/marmosa").use_store("CourseManagement");
+    /// assert_eq!(options.store_name.as_deref(), Some("CourseManagement"));
+    /// ```
+    ///
+    /// ```rust,should_panic
+    /// use marmosa::event_store::OpossumOptions;
+    ///
+    /// let _ = OpossumOptions::new("/var/lib/marmosa")
+    ///     .use_store("CourseManagement")
+    ///     .use_store("Billing");
+    /// ```
     pub fn use_store(mut self, name: impl Into<alloc::string::String>) -> Self {
         if self.store_name.is_some() {
             panic!("UseStore has already been called");
