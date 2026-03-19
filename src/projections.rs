@@ -938,6 +938,30 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Serialized projection payload that combines state and lifecycle metadata.
+///
+/// # Overview
+///
+/// The projection store persists this wrapper so it can read state and metadata from one file.
+///
+/// # Examples
+///
+/// ```rust
+/// use marmosa::projections::{ProjectionMetadata, ProjectionWrapper};
+///
+/// let wrapped = ProjectionWrapper {
+///     data: 42_u64,
+///     metadata: ProjectionMetadata {
+///         created_at: 1_000,
+///         last_updated_at: 2_000,
+///         version: 2,
+///         size_in_bytes: 128,
+///     },
+/// };
+///
+/// assert_eq!(wrapped.data, 42);
+/// assert_eq!(wrapped.metadata.version, 2);
+/// ```
 pub struct ProjectionWrapper<TState> {
     #[serde(rename = "data")]
     pub data: TState,
@@ -947,6 +971,30 @@ pub struct ProjectionWrapper<TState> {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Lifecycle metadata tracked for each projection entry.
+///
+/// # Overview
+///
+/// - `created_at`: first creation timestamp in milliseconds.
+/// - `last_updated_at`: last update timestamp in milliseconds.
+/// - `version`: number of successful saves for the key, starting at `1`.
+/// - `size_in_bytes`: serialized projection file size.
+///
+/// # Examples
+///
+/// ```rust
+/// use marmosa::projections::ProjectionMetadata;
+///
+/// let metadata = ProjectionMetadata {
+///     created_at: 1_000,
+///     last_updated_at: 1_500,
+///     version: 1,
+///     size_in_bytes: 256,
+/// };
+///
+/// assert_eq!(metadata.version, 1);
+/// assert!(metadata.last_updated_at >= metadata.created_at);
+/// ```
 pub struct ProjectionMetadata {
     pub created_at: u64,
     pub last_updated_at: u64,
@@ -954,11 +1002,18 @@ pub struct ProjectionMetadata {
     pub size_in_bytes: u64,
 }
 
+/// Metadata index accessor for projection entries.
+///
+/// # Overview
+///
+/// The index is stored at `{root_path}/Metadata/index.json` and allows metadata queries without
+/// reading each projection state file.
 pub struct ProjectionMetadataIndex<S> {
     storage: S,
 }
 
 impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
+    /// Creates a new metadata index accessor using the given storage backend.
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
@@ -971,6 +1026,35 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         alloc::format!("metadata_lock:{}", root_path)
     }
 
+    /// Inserts or updates metadata for a projection key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if lock acquisition fails.
+    /// Storage write failures are currently best-effort and may be ignored by this implementation.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::ports::{Error, StorageBackend};
+    /// use marmosa::projections::{ProjectionMetadata, ProjectionMetadataIndex};
+    ///
+    /// async fn upsert_metadata<S: StorageBackend + Send + Sync>(storage: S) -> Result<(), Error> {
+    ///     let index = ProjectionMetadataIndex::new(storage);
+    ///     index
+    ///         .save(
+    ///             "/db/Projections/StudentSummary",
+    ///             "student-1",
+    ///             ProjectionMetadata {
+    ///                 created_at: 1_000,
+    ///                 last_updated_at: 1_500,
+    ///                 version: 1,
+    ///                 size_in_bytes: 320,
+    ///             },
+    ///         )
+    ///         .await
+    /// }
+    /// ```
     pub async fn save(
         &self,
         root_path: &str,
@@ -998,6 +1082,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         Ok(())
     }
 
+    /// Loads metadata for a single projection key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when storage access fails.
     pub async fn get(
         &self,
         root_path: &str,
@@ -1008,6 +1097,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         Ok(index.get(key).cloned())
     }
 
+    /// Returns the full metadata map for a projection root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when storage access fails.
     pub async fn get_all(
         &self,
         root_path: &str,
@@ -1019,6 +1113,27 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         Ok(self.read_index(&index_path).await.unwrap_or_default())
     }
 
+    /// Returns metadata entries updated at or after `cutoff_time`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::ports::{Error, StorageBackend};
+    /// use marmosa::projections::ProjectionMetadataIndex;
+    ///
+    /// async fn recent_keys<S: StorageBackend + Send + Sync>(storage: S) -> Result<Vec<String>, Error> {
+    ///     let index = ProjectionMetadataIndex::new(storage);
+    ///     let entries = index
+    ///         .get_updated_since("/db/Projections/StudentSummary", 1_700_000_000_000)
+    ///         .await?;
+    ///
+    ///     Ok(entries.into_iter().map(|(key, _)| key).collect())
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when storage access fails.
     pub async fn get_updated_since(
         &self,
         root_path: &str,
@@ -1037,6 +1152,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         Ok(result)
     }
 
+    /// Removes metadata for a projection key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if lock acquisition fails.
     pub async fn delete(&self, root_path: &str, key: &str) -> Result<(), crate::ports::Error> {
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
@@ -1060,6 +1180,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         Ok(())
     }
 
+    /// Removes the metadata index file for the projection root.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if lock acquisition fails.
     pub async fn clear(&self, root_path: &str) -> Result<(), crate::ports::Error> {
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
