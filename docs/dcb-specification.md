@@ -112,7 +112,7 @@ In this repository, `decision_model::build_decision_model_from_events` and
 `decision_model::build_decision_model_nary_from_events` produce both state and append condition
 material aligned to that pattern.
 
-```rust,ignore
+```rust
 use marmosa::decision_model::{build_decision_model_from_events, DelegateDecisionProjection};
 use marmosa::domain::Query;
 

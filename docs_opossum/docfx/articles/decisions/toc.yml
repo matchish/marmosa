@@ -1,6 +1,0 @@
-- name: ADR-001 — IAsyncEnumerable
-  href: adr-001.md
-- name: ADR-002 — Single Context
-  href: adr-002.md
-- name: ADR-003 — Cross-Process Safety
-  href: adr-003.md

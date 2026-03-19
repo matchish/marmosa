@@ -1,11 +1,79 @@
+//! Decision model orchestration helpers for command-style workflows.
+//!
+//! # Overview
+//!
+//! Instead of a reflection-based mediator, Rust code typically composes explicit functions and
+//! traits. [`DecisionModelExt`] provides a thin orchestration layer on top of
+//! [`crate::event_store::EventStore`] for common decision flow patterns:
+//! - build state from relevant events,
+//! - execute a command operation,
+//! - retry when optimistic concurrency fails.
+//!
+//! # Examples
+//!
+//! ```rust,no_run
+//! use marmosa::decision_model::{DecisionModelExt, DelegateDecisionProjection};
+//! use marmosa::domain::{Query, QueryItem};
+//! use marmosa::event_store::EventStore;
+//! use marmosa::ports::Error;
+//!
+//! async fn ensure_course_exists<S>(store: &S) -> Result<bool, Error>
+//! where
+//!     S: EventStore + DecisionModelExt + Send + Sync,
+//! {
+//!     let projection = DelegateDecisionProjection::new(
+//!         false,
+//!         Query {
+//!             items: vec![QueryItem {
+//!                 event_types: vec!["CourseCreatedEvent".to_string()],
+//!                 tags: vec![],
+//!             }],
+//!         },
+//!         |state, evt| {
+//!             if evt.event.event_type == "CourseCreatedEvent" {
+//!                 true
+//!             } else {
+//!                 state
+//!             }
+//!         },
+//!     );
+//!
+//!     let model = store.build_decision_model_async(projection).await?;
+//!     Ok(model.state)
+//! }
+//! ```
+//!
+//! ```rust,no_run
+//! use marmosa::decision_model::DecisionModelExt;
+//! use marmosa::event_store::EventStore;
+//! use marmosa::ports::Error;
+//!
+//! async fn run_with_retry<S>(store: &S) -> Result<(), Error>
+//! where
+//!     S: EventStore + DecisionModelExt + Send + Sync,
+//! {
+//!     store
+//!         .execute_decision_async(3, |_s| async move {
+//!             // append / business decision logic goes here
+//!             Ok(())
+//!         })
+//!         .await
+//! }
+//! ```
+
 use crate::event_store::EventStore;
 use crate::ports::Error;
 
 /// Provides execution orchestration for decision models with automatic retry.
 pub trait DecisionModelExt {
     /// Executes an operation that modifies the event store, retrying on concurrency conflicts.
-    /// In the event of an AppendConditionFailed error, the operation will be retried
-    /// up to `max_retries` times.
+    /// In the event of an `AppendConditionFailed` error, the operation is retried up to
+    /// `max_retries` times.
+    ///
+    /// # Errors
+    ///
+    /// Returns the operation error when retries are exhausted or when a non-retriable error
+    /// occurs.
     fn execute_decision_async<R, F, Fut>(
         &self,
         max_retries: usize,
@@ -15,7 +83,7 @@ pub trait DecisionModelExt {
         F: Fn(&Self) -> Fut + Send + Sync,
         Fut: core::future::Future<Output = Result<R, Error>> + Send;
 
-    /// Builds a decision model from an event store asynchronously.
+    /// Builds a decision model by querying relevant events and folding them with one projection.
     fn build_decision_model_async<P, S>(
         &self,
         projection: P,
@@ -24,7 +92,7 @@ pub trait DecisionModelExt {
         P: crate::decision_model::DecisionProjection<State = S> + Send + Sync,
         S: Send + Sync;
 
-    /// Builds a single decision model state combining multiple homogeneous projections
+    /// Builds decision state for multiple homogeneous projections and returns one append condition.
     fn build_decision_model_nary_async<P, S>(
         &self,
         projections: &[&P],
