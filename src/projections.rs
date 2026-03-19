@@ -8,6 +8,24 @@
 //! [`ProjectionStore::query_by_tags`] instead of loading all projection states and filtering in
 //! memory.
 //!
+//! In DCB-style workflows, a projection acts as a deterministic fold over relevant events. Keep
+//! projections small and purpose-specific so decision boundaries stay narrow.
+//!
+//! # Projection Model
+//!
+//! A projection can be modeled as:
+//! - current optional state,
+//! - one incoming event,
+//! - next optional state.
+//!
+//! Returning `None` allows delete semantics for the projection instance.
+//!
+//! # Relevant Event Filtering
+//!
+//! [`ProjectionDefinition::event_types`] declares event-type filters and
+//! [`ProjectionDefinition::key_selector`] narrows updates to a specific projection key. This keeps
+//! rebuild and catch-up work focused on only relevant data.
+//!
 //! # Examples
 //!
 //! ```rust
@@ -47,11 +65,43 @@
 //! assert!(tags.iter().any(|t| t.key == "IsMaxedOut" && t.value == "true"));
 //! ```
 //!
+//! ```rust,no_run
+//! use marmosa::domain::{EventRecord, Query};
+//! use marmosa::projections::ProjectionDefinition;
+//!
+//! struct ExistsProjection;
+//!
+//! impl ProjectionDefinition for ExistsProjection {
+//!     type State = bool;
+//!
+//!     fn projection_name(&self) -> &str {
+//!         "CourseExists"
+//!     }
+//!
+//!     fn event_types(&self) -> Query {
+//!         Query::all()
+//!     }
+//!
+//!     fn key_selector(&self, _event: &EventRecord) -> Option<String> {
+//!         Some("course-1".to_string())
+//!     }
+//!
+//!     fn apply(&self, state: Option<Self::State>, event: &EventRecord) -> Option<Self::State> {
+//!         match event.event.event_type.as_str() {
+//!             "CourseDefinedEvent" => Some(true),
+//!             "CourseArchivedEvent" => Some(false),
+//!             _ => state,
+//!         }
+//!     }
+//! }
+//! ```
+//!
 //! # Notes
 //!
 //! - Tag keys and values are normalized to lowercase in the default storage-backed projection
 //!   store before writing index files.
 //! - Multi-tag queries use set intersection semantics (`AND`).
+//! - Projection logic should be deterministic and side-effect free.
 
 pub mod options;
 pub mod related_events;
