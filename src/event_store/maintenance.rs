@@ -1,15 +1,96 @@
+//! Event tag maintenance operations for existing events.
+//!
+//! # Overview
+//!
+//! This module provides additive tag migration on top of the event store.
+//! [`EventStoreMaintenance::add_tags`] scans events of a specific type and writes only tags whose
+//! key does not already exist on an event.
+//!
+//! The operation is intentionally additive:
+//! - existing tag keys are preserved,
+//! - no tag removal is performed,
+//! - no in-place key replacement is performed.
+//!
+//! This keeps event enrichment predictable while allowing read-side indices to evolve over time.
+
 use crate::domain::{EventRecord, Query, QueryItem, Tag};
 use crate::event_store::{EventStore, MarmosaStore};
 use crate::ports::{Clock, Error, StorageBackend};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+/// Result summary returned by [`EventStoreMaintenance::add_tags`].
+///
+/// # Overview
+///
+/// - `events_processed`: number of matching events scanned.
+/// - `tags_added`: number of new tag entries actually persisted.
+///
+/// # Examples
+///
+/// ```rust
+/// use marmosa::event_store::maintenance::AddTagsResult;
+///
+/// let result = AddTagsResult {
+///     tags_added: 3,
+///     events_processed: 10,
+/// };
+///
+/// assert_eq!(result.tags_added, 3);
+/// assert_eq!(result.events_processed, 10);
+/// assert!(result.events_processed >= result.tags_added);
+/// ```
 pub struct AddTagsResult {
     pub tags_added: usize,
     pub events_processed: usize,
 }
 
+/// Additive tag maintenance API for event stores.
+///
+/// # Overview
+///
+/// Implementations enrich events of one `event_type` by invoking a `tag_factory` for each matched
+/// [`EventRecord`]. Returned tags are merged by key: if a key already exists on the event, that
+/// key is left unchanged.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use marmosa::domain::{EventRecord, Tag};
+/// use marmosa::event_store::maintenance::EventStoreMaintenance;
+/// use marmosa::ports::Error;
+///
+/// async fn add_region_tags<S: EventStoreMaintenance + ?Sized>(store: &S) -> Result<(), Error> {
+///     let result = store
+///         .add_tags("CourseCreated", |record: &EventRecord| {
+///             if record.event.tags.iter().any(|t| t.key == "courseId") {
+///                 vec![Tag {
+///                     key: "region".to_string(),
+///                     value: "EU".to_string(),
+///                 }]
+///             } else {
+///                 vec![]
+///             }
+///         })
+///         .await?;
+///
+///     assert!(result.events_processed >= result.tags_added);
+///     Ok(())
+/// }
+/// ```
 pub trait EventStoreMaintenance {
+    /// Adds derived tags to all events of `event_type`.
+    ///
+    /// # Notes
+    ///
+    /// - Additive-only behavior: existing keys are not overwritten.
+    /// - `tag_factory` receives the full persisted [`EventRecord`], including position and
+    ///   existing tags.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::IoError`] when persistence or serialization fails, or when `event_type`
+    /// is empty.
     fn add_tags<F>(
         &self,
         event_type: &str,
