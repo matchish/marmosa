@@ -1,15 +1,66 @@
+//! Ledger management for monotonically increasing event sequence positions.
+//!
+//! # Overview
+//!
+//! The ledger is a small JSON file stored at `{context_path}/.ledger`.
+//! It tracks the latest committed sequence position and total event count so new appends can
+//! allocate positions without scanning all event files.
+//!
+//! This module provides [`LedgerManager`] to:
+//! - read the current sequence position,
+//! - allocate the next position,
+//! - persist position updates,
+//! - and reconcile ledger state from event files.
+//!
+//! # Examples
+//!
+//! ```rust
+//! use marmosa::event_store::ledger::LedgerData;
+//!
+//! let data = LedgerData {
+//!     last_sequence_position: 42,
+//!     event_count: 42,
+//! };
+//!
+//! assert_eq!(data.last_sequence_position, data.event_count);
+//! ```
+//!
+//! ```rust
+//! use marmosa::event_store::ledger::LedgerManager;
+//! use marmosa::ports::{Error, StorageBackend};
+//!
+//! async fn next_position<S: StorageBackend + Send + Sync + Clone>(
+//!     manager: &LedgerManager<S>,
+//! ) -> Result<u64, Error> {
+//!     manager.get_next_sequence_position_async("/store/context").await
+//! }
+//! ```
+//!
+//! # Errors
+//!
+//! Reading a corrupted `.ledger` payload returns [`crate::ports::Error::IoError`].
+//! Missing ledger files are treated as an empty store and return position `0`.
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "PascalCase")]
+/// Serialized representation of ledger state.
+///
+/// # Notes
+///
+/// - `last_sequence_position` is the highest assigned global sequence position.
+/// - `event_count` currently mirrors `last_sequence_position` in this implementation.
 pub struct LedgerData {
     pub last_sequence_position: u64,
     pub event_count: u64,
 }
 
+/// Coordinates reads and updates of the `.ledger` file through a storage backend.
 pub struct LedgerManager<S> {
     storage: S,
 }
 
 impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
+    /// Creates a new ledger manager for the provided storage backend.
     pub fn new(storage: S) -> Self {
         Self { storage }
     }
@@ -18,6 +69,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
         alloc::format!("{}/.ledger", context_path)
     }
 
+    /// Returns the last committed sequence position for `context_path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the ledger exists but contains invalid JSON.
     pub async fn get_last_sequence_position_async(
         &self,
         context_path: &str,
@@ -38,6 +94,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
         }
     }
 
+    /// Returns the next sequence position to allocate for `context_path`.
+    ///
+    /// # Notes
+    ///
+    /// Returns `1` for an uninitialized context (no `.ledger` file present).
     pub async fn get_next_sequence_position_async(
         &self,
         context_path: &str,
@@ -56,6 +117,11 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
         }
     }
 
+    /// Persists the latest allocated sequence `position` to the ledger.
+    ///
+    /// # Errors
+    ///
+    /// Returns storage errors when serialization or write operations fail.
     pub async fn update_sequence_position_async(
         &self,
         context_path: &str,
@@ -72,14 +138,21 @@ impl<S: crate::ports::StorageBackend + Send + Sync + Clone> LedgerManager<S> {
         Ok(())
     }
 
+    /// Acquires the storage-level append lock for a context.
     pub async fn acquire_lock_async(&self, context_path: &str) -> Result<(), crate::ports::Error> {
         self.storage.acquire_stream_lock(context_path).await
     }
 
+    /// Releases the storage-level append lock for a context.
     pub async fn release_lock_async(&self, context_path: &str) -> Result<(), crate::ports::Error> {
         self.storage.release_stream_lock(context_path).await
     }
 
+    /// Reconciles the ledger with the highest event file position found in `events_dir`.
+    ///
+    /// # Notes
+    ///
+    /// If `events_dir` does not exist, reconciliation is treated as a no-op.
     pub async fn reconcile_ledger_async(
         &self,
         context_path: &str,
