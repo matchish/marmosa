@@ -13,12 +13,7 @@ default = []
 std = ["serde/std", "serde_json/std"]
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["async_tokio"] }
 tempfile = "3.27.0"
 tokio = { version = "1", features = ["full", "test-util"] }
 typetag = "0.2.21"
 uuid = { version = "1.22.0", features = ["v4"] }
-
-[[bench]]
-name = "append_benchmarks"
-harness = false
