@@ -1,3 +1,14 @@
+//! Utilities for rebuilding multiple projections from the event store.
+//!
+//! # Overview
+//!
+//! [`ProjectionRebuilder`] coordinates batch rebuilds across registered projection runners.
+//! Each registered task is executed asynchronously and summarized in
+//! [`ProjectionRebuildResult`].
+//!
+//! This module is useful for startup catch-up, explicit maintenance operations, and projection
+//! recovery scenarios.
+
 use core::future::Future;
 use core::pin::Pin;
 use alloc::boxed::Box;
@@ -12,6 +23,10 @@ use crate::ports::StorageBackend;
 
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+/// Rebuild contract used by [`ProjectionRebuilder`].
+///
+/// Implementors expose a projection name, checkpoint lookup, and rebuild operation for one
+/// projection pipeline.
 pub trait RebuildTask<E: EventStore>: Send + Sync {
     fn name(&self) -> String;
     fn rebuild<'a>(&'a self, store: &'a E) -> BoxFuture<'a, Result<u64, Error>>;
@@ -44,19 +59,39 @@ where
 }
 
 pub struct ProjectionRebuildResult {
+    /// `true` when every scheduled projection rebuild succeeded.
     pub success: bool,
+    /// Number of projections that completed rebuild successfully.
     pub total_rebuilt: usize,
+    /// Total elapsed time for the rebuild operation.
     pub duration: core::time::Duration,
+    /// Human-readable status lines for individual projections.
     pub details: Vec<String>,
+    /// Projection names that failed to rebuild.
     pub failed_projections: Vec<String>,
 }
 
+/// Runs rebuilds for a set of registered projection tasks.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use marmosa::event_store::EventStore;
+/// use marmosa::projections::ProjectionRebuilder;
+///
+/// async fn rebuild_all_registered<E: EventStore + Send + Sync>(store: &E) {
+///     let rebuilder = ProjectionRebuilder::new(store);
+///     let result = rebuilder.rebuild_all(false).await;
+///     assert!(result.failed_projections.len() <= result.details.len());
+/// }
+/// ```
 pub struct ProjectionRebuilder<'a, E: EventStore> {
     store: &'a E,
     runners: Vec<Box<dyn RebuildTask<E> + 'a>>,
 }
 
 impl<'a, E: EventStore + Send + Sync> ProjectionRebuilder<'a, E> {
+    /// Creates a new rebuilder bound to an event store.
     pub fn new(store: &'a E) -> Self {
         Self {
             store,
@@ -64,10 +99,18 @@ impl<'a, E: EventStore + Send + Sync> ProjectionRebuilder<'a, E> {
         }
     }
     
+    /// Registers one rebuild task.
     pub fn register<R: RebuildTask<E> + 'a>(&mut self, runner: R) {
         self.runners.push(Box::new(runner));
     }
     
+    /// Rebuilds eligible projections and returns a summary.
+    ///
+    /// # Notes
+    ///
+    /// - If `force_rebuild` is `false`, tasks with an existing checkpoint are skipped.
+    /// - Scheduled tasks are executed concurrently via `futures::future::join_all`.
+    /// - Errors are collected per projection and returned in [`ProjectionRebuildResult`].
     pub async fn rebuild_all(&self, force_rebuild: bool) -> ProjectionRebuildResult {
         let mut total_rebuilt = 0;
         let mut details = Vec::new();
