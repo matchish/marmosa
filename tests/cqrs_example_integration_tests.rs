@@ -34,8 +34,6 @@ struct StudentUnenrolledFromCourseEvent {
 
 #[derive(Clone, Default)]
 struct CourseEnlistmentAggregate {
-    course_id: String,
-    student_id: String,
     course_max_capacity: i32,
     course_current_enrollment_count: i32,
     student_current_course_enrollment_count: i32,
@@ -107,8 +105,6 @@ impl DecisionProjection for EnrollmentDecisionModel {
 
     fn initial_state(&self) -> Self::State {
         CourseEnlistmentAggregate {
-            course_id: self.course_id.clone(),
-            student_id: self.student_id.clone(),
             course_max_capacity: 0,
             course_current_enrollment_count: 0,
             student_current_course_enrollment_count: 0,

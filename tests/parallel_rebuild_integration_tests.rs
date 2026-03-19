@@ -1,6 +1,6 @@
 mod common;
 
-use common::{FakeClock, InMemoryStorage};
+use common::InMemoryStorage;
 use marmosa::event_store::{EventStore, OpossumStore};
 use marmosa::projections::{ProjectionRunner, StorageBackendProjectionStore, ProjectionDefinition, ProjectionRebuilder};
 use marmosa::domain::{Query, QueryItem, EventRecord, EventData, DomainEvent};
@@ -45,7 +45,6 @@ define_slow_projection!(SlowProjection4, "Slow4", "SlowEvent4");
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_rebuilds_of_different_projections_execute_in_parallel() {
-    let clock = FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0));
 
@@ -78,7 +77,6 @@ define_slow_projection!(LongRunningProjection, "LongRunning", "LongRunningEvent"
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn duplicate_rebuild_same_projection_executes_sequentially() {
-    let clock = FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     let store = Arc::new(OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0)));
 
@@ -121,7 +119,6 @@ async fn duplicate_rebuild_same_projection_executes_sequentially() {
 
 #[tokio::test]
 async fn rebuild_after_rebuild_same_projection_succeeds() {
-    let clock = FakeClock::new(0);
     let storage = Arc::new(InMemoryStorage::new());
     let store = OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0));
 
