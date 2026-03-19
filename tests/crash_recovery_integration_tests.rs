@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::ports::StorageBackend;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -22,7 +22,7 @@ async fn append_after_crash_preserves_orphaned_events_and_allocates_next_positio
     let storage = Arc::new(InMemoryStorage::new());
 
     // -- Arrange: append 2 events normally --
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let pre_event1 = EventData {
         event_id: uuid::Uuid::new_v4().to_string(),
@@ -95,7 +95,7 @@ async fn append_after_crash_preserves_orphaned_events_and_allocates_next_positio
     // but we know it's at 2 because we bypassed the store for event 3.
 
     // -- Act: create a NEW store instance (simulates restart) and append --
-    let recovered_store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let recovered_store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let post_event = EventData {
         event_id: uuid::Uuid::new_v4().to_string(),
@@ -152,7 +152,7 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
     let storage = Arc::new(InMemoryStorage::new());
 
     // -- Arrange: append 3 events normally --
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let events: Vec<EventData> = (1..=3)
         .map(|i| EventData {
@@ -201,7 +201,7 @@ async fn read_after_crash_recovery_returns_all_events_in_correct_order() {
     }
 
     // -- Act: create a new store (restart) --
-    let recovered_store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let recovered_store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let post_events: Vec<EventData> = (1..=2)
         .map(|i| EventData {

@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::ports::StorageBackend;
 use marmosa::projections::{
     ProjectionDefinition, ProjectionMetadata, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
@@ -163,11 +163,11 @@ impl ProjectionDefinition for AccountBalanceProjection {
 
 async fn setup() -> (
     Arc<InMemoryStorage>,
-    OpossumStore<Arc<InMemoryStorage>, FakeClock>,
+    MarmosaStore<Arc<InMemoryStorage>, FakeClock>,
     ProjectionRunner<Arc<InMemoryStorage>, AccountBalanceState, AccountBalanceProjection, StorageBackendProjectionStore<Arc<InMemoryStorage>, AccountBalanceState, marmosa::projections::NoopProjectionTagProvider, marmosa::projections::NoopClock>>,
 ) {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store = StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), AccountBalanceProjection, projection_store);
 

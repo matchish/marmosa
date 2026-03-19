@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{AppendCondition, Query, QueryItem};
-use marmosa::event_store::OpossumStore;
+use marmosa::event_store::MarmosaStore;
 use marmosa::extensions::{EventStoreExt, ToDomainEventExt};
 use marmosa::ports::Error;
 use serde::{Deserialize, Serialize};
@@ -14,10 +14,10 @@ struct InvoiceCreatedEvent {
     invoice_number: i32,
 }
 
-fn create_store() -> Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>> {
+fn create_store() -> Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>> {
     let storage = Arc::new(InMemoryStorage::new());
     let clock = FakeClock::new(1000);
-    Arc::new(OpossumStore::new(storage, clock))
+    Arc::new(MarmosaStore::new(storage, clock))
 }
 
 fn invoice_query() -> Query {
@@ -35,7 +35,7 @@ fn parse_invoice(data: &str) -> InvoiceCreatedEvent {
 }
 
 async fn create_next_invoice_async(
-    store: Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>,
+    store: Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>>,
 ) -> i32 {
     let query = invoice_query();
 

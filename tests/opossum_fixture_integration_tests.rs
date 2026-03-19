@@ -2,10 +2,10 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, Query};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use std::sync::Arc;
 
-type TestStore = OpossumStore<Arc<InMemoryStorage>, FakeClock>;
+type TestStore = MarmosaStore<Arc<InMemoryStorage>, FakeClock>;
 
 struct MarmosaFixture {
     event_store: Arc<TestStore>,
@@ -14,7 +14,7 @@ struct MarmosaFixture {
 impl MarmosaFixture {
     fn new() -> Self {
         let storage = Arc::new(InMemoryStorage::new());
-        let store = OpossumStore::new(storage, FakeClock::new(0));
+        let store = MarmosaStore::new(storage, FakeClock::new(0));
         Self {
             event_store: Arc::new(store),
         }

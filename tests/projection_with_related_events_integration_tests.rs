@@ -173,7 +173,7 @@ impl ProjectionWithRelatedEvents for PostWithAuthorProjection {
 async fn projection_with_related_events_builds_correct_state() {
     let storage = Arc::new(common::InMemoryStorage::new());
     let clock = common::FakeClock::new(100);
-    let store = marmosa::event_store::OpossumStore::new(storage.clone(), clock);
+    let store = marmosa::event_store::MarmosaStore::new(storage.clone(), clock);
 
     let user_id = Uuid::new_v4().to_string();
     let post_id = Uuid::new_v4().to_string();

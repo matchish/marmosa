@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
 };
@@ -111,7 +111,7 @@ impl ProjectionDefinition for E2EOrderProjection {
 #[tokio::test]
 async fn end_to_end_create_and_query_order_works_correctly() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
@@ -196,7 +196,7 @@ async fn end_to_end_create_and_query_order_works_correctly() {
 #[tokio::test]
 async fn end_to_end_multiple_orders_queries_work() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
@@ -353,7 +353,7 @@ async fn end_to_end_multiple_orders_queries_work() {
 #[tokio::test]
 async fn end_to_end_incremental_update_updates_projection() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
@@ -445,7 +445,7 @@ async fn end_to_end_incremental_update_updates_projection() {
 #[tokio::test]
 async fn end_to_end_order_cancellation_removes_projection() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);
@@ -516,7 +516,7 @@ async fn end_to_end_order_cancellation_removes_projection() {
 #[tokio::test]
 async fn end_to_end_checkpoint_management_tracks_progress() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "E2EOrders".to_string());
     let runner = ProjectionRunner::new(Arc::clone(&storage), E2EOrderProjection, projection_store);

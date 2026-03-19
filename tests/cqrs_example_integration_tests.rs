@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, Tag, QueryItem};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::decision_model::{DecisionModelExt, DecisionProjection};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -241,7 +241,7 @@ async fn handle_unenroll_student(store: &(impl EventStore + Send + Sync), course
 
 fn create_store() -> impl EventStore {
     let storage = Arc::new(InMemoryStorage::new());
-    OpossumStore::new(storage, FakeClock::new(100))
+    MarmosaStore::new(storage, FakeClock::new(100))
 }
 
 #[tokio::test]

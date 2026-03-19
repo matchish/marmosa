@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::ports::StorageBackend;
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, ProjectionTagProvider,
@@ -144,7 +144,7 @@ fn deposit_event(account_id: &str, amount: f64) -> EventData {
 #[tokio::test]
 async fn rebuild_projection_after_interrupted_sequence_recovers_final_balance() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
     let account_id = uuid::Uuid::new_v4().to_string();
 
     store
@@ -203,7 +203,7 @@ async fn rebuild_projection_after_interrupted_sequence_recovers_final_balance() 
 #[tokio::test]
 async fn rebuild_projection_saves_checkpoint_and_no_rebuild_journal_artifacts() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
     let account_id = uuid::Uuid::new_v4().to_string();
 
     store
@@ -236,7 +236,7 @@ async fn rebuild_projection_saves_checkpoint_and_no_rebuild_journal_artifacts() 
 #[tokio::test]
 async fn rebuild_with_tag_provider_restores_index_consistently() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
     let account_id_1 = uuid::Uuid::new_v4().to_string();
     let account_id_2 = uuid::Uuid::new_v4().to_string();
 

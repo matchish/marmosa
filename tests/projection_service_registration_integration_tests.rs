@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{
     AutoRebuildMode, ProjectionDefinition, ProjectionOptions, ProjectionRebuilder,
     ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
@@ -62,7 +62,7 @@ fn projection_options_customization_applies_configuration() {
 #[tokio::test]
 async fn explicit_registration_builds_runner_and_projection_store() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
 
     store
         .append_async(
@@ -98,7 +98,7 @@ async fn explicit_registration_builds_runner_and_projection_store() {
 #[tokio::test]
 async fn projection_rebuilder_runs_registered_projection() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
 
     for _ in 0..3 {
         store
@@ -133,7 +133,7 @@ async fn projection_rebuilder_runs_registered_projection() {
 #[tokio::test]
 async fn projection_rebuilder_without_registered_projections_is_noop_success() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(0));
 
     let rebuilder = ProjectionRebuilder::new(&store);
     let result = rebuilder.rebuild_all(false).await;

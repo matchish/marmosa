@@ -1,5 +1,5 @@
 use crate::domain::{EventRecord, Query, QueryItem, Tag};
-use crate::event_store::{EventStore, OpossumStore};
+use crate::event_store::{EventStore, MarmosaStore};
 use crate::ports::{Clock, Error, StorageBackend};
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -20,7 +20,7 @@ pub trait EventStoreMaintenance {
 }
 
 impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintenance
-    for OpossumStore<S, C>
+    for MarmosaStore<S, C>
 {
     async fn add_tags<F>(&self, event_type: &str, tag_factory: F) -> Result<AddTagsResult, Error>
     where
@@ -107,7 +107,7 @@ mod tests {
     async fn add_tags_adds_new_tags_to_all_matching_events() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         store
             .append_async(
@@ -152,7 +152,7 @@ mod tests {
     async fn add_tags_only_affects_events_of_specified_type() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         store
             .append_async(
@@ -201,7 +201,7 @@ mod tests {
     async fn add_tags_skips_tags_whose_key_already_exists() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         let mut evt = create_test_event("CourseCreated");
         evt.event.tags.push(Tag {
@@ -235,7 +235,7 @@ mod tests {
     async fn add_tags_adds_only_new_keys_when_event_has_some_tags() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         let mut evt = create_test_event("CourseCreated");
         evt.event.tags.push(Tag {
@@ -279,7 +279,7 @@ mod tests {
     async fn add_tags_returns_zero_when_no_events_of_type() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         let result = store
             .add_tags("NonExistentEventType", |_| {
@@ -299,7 +299,7 @@ mod tests {
     async fn add_tags_updates_tag_index_so_new_tag_query_finds_events() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         store
             .append_async(alloc::vec![create_test_event("CourseCreated")], None)
@@ -335,7 +335,7 @@ mod tests {
     async fn add_tags_tag_factory_receives_full_sequenced_event() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         let mut evt = create_test_event("CourseCreated");
         evt.event.tags.push(Tag {
@@ -375,7 +375,7 @@ mod tests {
     async fn add_tags_with_empty_event_type_returns_error() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         let result = store.add_tags("", |_| alloc::vec![]).await;
         assert!(matches!(result, Err(Error::IoError)));

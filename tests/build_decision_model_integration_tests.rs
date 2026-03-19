@@ -4,7 +4,7 @@ use common::{FakeClock, InMemoryStorage};
 use marmosa::{
     decision_model::{DecisionModelExt, DecisionProjection},
     domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag},
-    event_store::{EventStore, OpossumStore},
+    event_store::{EventStore, MarmosaStore},
 };
 use std::sync::Arc;
 
@@ -95,9 +95,9 @@ impl DecisionProjection for EnrollmentCountProjection {
     }
 }
 
-fn create_event_store() -> Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>> {
+fn create_event_store() -> Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>> {
     let storage = Arc::new(InMemoryStorage::new());
-    Arc::new(OpossumStore::new(storage, FakeClock::new(1000)))
+    Arc::new(MarmosaStore::new(storage, FakeClock::new(1000)))
 }
 
 #[tokio::test]

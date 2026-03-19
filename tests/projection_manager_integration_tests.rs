@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore
 };
@@ -118,7 +118,7 @@ fn create_event(
 #[tokio::test]
 async fn rebuild_async_with_existing_events_builds_projection_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(100));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(100));
 
     let proj = PmTestItemProjection;
     let store_proj_runner = StorageBackendProjectionStore::new(Arc::clone(&storage), "PmTestItems".to_string());
@@ -146,7 +146,7 @@ async fn rebuild_async_with_existing_events_builds_projection_async() {
 #[tokio::test]
 async fn rebuild_async_with_delete_event_removes_projection_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(100));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(100));
 
     let proj = PmTestItemProjection;
     let store_proj_runner = StorageBackendProjectionStore::new(Arc::clone(&storage), "PmTestItems".to_string());
@@ -180,7 +180,7 @@ async fn rebuild_async_with_delete_event_removes_projection_async() {
 #[tokio::test]
 async fn rebuild_async_sparse_projection_checkpoint_advanced_to_store_head_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(100));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(100));
 
     let proj = PmTestItemProjection;
     let store_proj_runner = StorageBackendProjectionStore::new(Arc::clone(&storage), "PmTestItems".to_string());

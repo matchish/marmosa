@@ -222,13 +222,13 @@ mod tests {
 
     #[test]
     fn constructor_sets_default_root_path() {
-        let options = OpossumOptions::new("OpossumStore");
-        assert_eq!(options.root_path, "OpossumStore");
+        let options = OpossumOptions::new("MarmosaStore");
+        assert_eq!(options.root_path, "MarmosaStore");
     }
 
     #[test]
     fn constructor_store_name_is_null_by_default() {
-        let options = OpossumOptions::new("OpossumStore");
+        let options = OpossumOptions::new("MarmosaStore");
         assert!(options.store_name.is_none());
     }
 

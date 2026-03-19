@@ -1,4 +1,4 @@
-use crate::event_store::OpossumStore;
+use crate::event_store::MarmosaStore;
 use crate::ports::{Error, StorageBackend};
 
 pub trait EventStoreAdmin {
@@ -6,7 +6,7 @@ pub trait EventStoreAdmin {
     fn delete_store(&self) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 }
 
-impl<S: StorageBackend + Send + Sync, C: Send + Sync> EventStoreAdmin for OpossumStore<S, C> {
+impl<S: StorageBackend + Send + Sync, C: Send + Sync> EventStoreAdmin for MarmosaStore<S, C> {
     async fn delete_store(&self) -> Result<(), Error> {
         let dirs = ["Events", "Indices", "Projections", ".ledger"];
 
@@ -45,7 +45,7 @@ mod tests {
     async fn delete_store_with_events_deletes_store_directory() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = OpossumStore::new(storage.clone(), clock);
+        let store = MarmosaStore::new(storage.clone(), clock);
 
         store
             .append_async(alloc::vec![create_test_event("TestEvent")], None)
@@ -68,7 +68,7 @@ mod tests {
     async fn delete_store_when_store_does_not_exist_completes_gracefully() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = OpossumStore::new(storage.clone(), clock);
+        let store = MarmosaStore::new(storage.clone(), clock);
 
         // Ensure directory is empty
         let files = storage.read_dir("Events").await.unwrap_or_default();
@@ -82,7 +82,7 @@ mod tests {
     async fn delete_store_then_append_recreates_store_from_scratch() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = OpossumStore::new(storage.clone(), clock);
+        let store = MarmosaStore::new(storage.clone(), clock);
 
         // Seed an event then delete
         store
@@ -114,7 +114,7 @@ mod tests {
     async fn delete_store_concurrent_with_append_neither_throws_and_store_is_consistent() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         // Seed the store
         store
@@ -147,7 +147,7 @@ mod tests {
     async fn delete_store_called_twice_concurrently_both_complete_without_error() {
         let storage = Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(100);
-        let store = Arc::new(OpossumStore::new(storage.clone(), clock));
+        let store = Arc::new(MarmosaStore::new(storage.clone(), clock));
 
         store
             .append_async(alloc::vec![create_test_event("SeedEvent")], None)

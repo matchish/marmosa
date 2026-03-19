@@ -37,20 +37,18 @@ pub trait EventStore {
     ) -> impl core::future::Future<Output = Result<Vec<EventRecord>, Error>> + Send;
 }
 
-pub type MarmosaStore<S, C> = OpossumStore<S, C>;
-
-pub struct OpossumStore<S, C> {
+pub struct MarmosaStore<S, C> {
     storage: S,
     clock: C,
 }
 
-impl<S, C> OpossumStore<S, C> {
+impl<S, C> MarmosaStore<S, C> {
     pub fn new(storage: S, clock: C) -> Self {
         Self { storage, clock }
     }
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C> {
+impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> MarmosaStore<S, C> {
     async fn read_internal(
         &self,
         query: Query,
@@ -109,7 +107,7 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> OpossumStore<S, C>
     }
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for OpossumStore<S, C> {
+impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for MarmosaStore<S, C> {
     async fn append_async(
         &self,
         events: Vec<EventData>,
@@ -197,7 +195,7 @@ mod tests {
     async fn test_append_single_event_to_new_stream() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let event = EventData {
             event_id: "evt-123".to_string(),
@@ -217,7 +215,7 @@ mod tests {
     async fn test_append_and_read_stream() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let event1 = EventData {
             event_id: "evt-1".to_string(),
@@ -243,7 +241,7 @@ mod tests {
     async fn test_append_condition_stream_does_not_exist() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let event = EventData {
             event_id: "evt-1".to_string(),
@@ -283,7 +281,7 @@ mod tests {
     async fn test_append_condition_expected_position() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let event = EventData {
             event_id: "evt-1".to_string(),
@@ -340,7 +338,7 @@ mod tests {
     async fn test_append_with_multiple_events_assigns_sequential_positions() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let events = vec![
             EventData {
@@ -391,7 +389,7 @@ mod tests {
     async fn test_append_writes_all_event_files() {
         let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage.clone(), clock);
+        let store = MarmosaStore::new(storage.clone(), clock);
 
         let events = vec![
             EventData {
@@ -425,7 +423,7 @@ mod tests {
     async fn test_append_multiple_sequential_appends_maintains_continuous_sequence() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let batch1 = vec![EventData {
             event_id: "evt-1".to_string(),
@@ -462,7 +460,7 @@ mod tests {
     async fn test_read_async_with_query_all_returns_all_events() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         for i in 1..=3 {
             let evt = EventData {
@@ -494,7 +492,7 @@ mod tests {
     async fn test_read_async_with_single_event_type_returns_matching_events() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         for event_type in ["OrderCreated", "OrderShipped", "OrderCreated"] {
             let evt = EventData {
@@ -531,7 +529,7 @@ mod tests {
     async fn test_read_async_with_single_tag_returns_matching_events() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         let tag_prod = crate::domain::Tag {
             key: "Environment".to_string(),
@@ -575,7 +573,7 @@ mod tests {
     async fn test_read_async_with_from_position_in_middle_returns_only_events_after_position() {
         let storage = InMemoryStorage::new();
         let clock = FakeClock::new(1696000000);
-        let store = OpossumStore::new(storage, clock);
+        let store = MarmosaStore::new(storage, clock);
 
         for i in 1..=5 {
             let evt = EventData {

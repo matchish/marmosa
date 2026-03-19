@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
 };
@@ -63,7 +63,7 @@ async fn test_eventstore_projections_end_to_end() {
     let clock = FakeClock::new(1000);
 
     // Create event store
-    let store = OpossumStore::new(Arc::clone(&storage), clock);
+    let store = MarmosaStore::new(Arc::clone(&storage), clock);
 
     // Create projection store
     let projection_store =

@@ -2,17 +2,17 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{AppendCondition, DomainEvent, EventData, Query, QueryItem, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn create_store() -> (
     Arc<InMemoryStorage>,
-    Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>,
+    Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>>,
 ) {
     let storage = Arc::new(InMemoryStorage::new());
     let clock = FakeClock::new(1000);
-    let store = Arc::new(OpossumStore::new(Arc::clone(&storage), clock));
+    let store = Arc::new(MarmosaStore::new(Arc::clone(&storage), clock));
     (storage, store)
 }
 

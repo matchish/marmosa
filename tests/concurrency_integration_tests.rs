@@ -4,7 +4,7 @@ use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{
     AppendCondition, DomainEvent, EventData, EventRecord, Query, QueryItem, Tag,
 };
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::ports::Error;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -98,7 +98,7 @@ impl CourseEnlistmentAggregate {
 }
 
 async fn create_course(
-    store: Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>,
+    store: Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>>,
     course_id: String,
     max_capacity: i32,
 ) -> Result<(), Error> {
@@ -123,7 +123,7 @@ async fn create_course(
 }
 
 async fn enroll_student(
-    store: Arc<OpossumStore<Arc<InMemoryStorage>, FakeClock>>,
+    store: Arc<MarmosaStore<Arc<InMemoryStorage>, FakeClock>>,
     course_id: String,
     student_id: String,
 ) -> Result<bool, Error> {
@@ -228,7 +228,7 @@ async fn enroll_student(
 #[tokio::test]
 async fn independent_commands_should_execute_concurrently_without_conflict_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let student_id = Uuid::new_v4().to_string();
     let course_id = Uuid::new_v4().to_string();
@@ -300,7 +300,7 @@ async fn independent_commands_should_execute_concurrently_without_conflict_async
 #[tokio::test]
 async fn concurrent_enrollments_when_course_has_one_spot_left_should_allow_only_one_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let course_id = Uuid::new_v4().to_string();
     create_course(store.clone(), course_id.clone(), 10)
@@ -367,7 +367,7 @@ async fn concurrent_enrollments_when_course_has_one_spot_left_should_allow_only_
 #[tokio::test]
 async fn concurrent_enrollments_to_different_courses_should_all_succeed_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let student_id = Uuid::new_v4().to_string();
     let courses = vec![
@@ -410,7 +410,7 @@ async fn concurrent_enrollments_to_different_courses_should_all_succeed_async() 
 #[tokio::test]
 async fn concurrent_enrollments_same_student_same_course_should_only_allow_once_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let student_id = Uuid::new_v4().to_string();
     let course_id = Uuid::new_v4().to_string();
@@ -457,7 +457,7 @@ async fn concurrent_enrollments_same_student_same_course_should_only_allow_once_
 #[tokio::test]
 async fn concurrent_enrollments_many_students_one_course_should_respect_capacity_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let course_id = Uuid::new_v4().to_string();
     let capacity = 10;
@@ -496,7 +496,7 @@ async fn concurrent_enrollments_many_students_one_course_should_respect_capacity
 #[tokio::test]
 async fn failed_append_should_release_lock_allowing_subsequent_operations_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let course_id = Uuid::new_v4().to_string();
     let student1_id = Uuid::new_v4().to_string();
@@ -531,7 +531,7 @@ async fn failed_append_should_release_lock_allowing_subsequent_operations_async(
 #[tokio::test]
 async fn append_async_with_after_sequence_position_should_detect_stale_reads_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let course_id = Uuid::new_v4().to_string();
     create_course(store.clone(), course_id.clone(), 10)
@@ -604,7 +604,7 @@ async fn append_async_with_after_sequence_position_should_detect_stale_reads_asy
 #[tokio::test]
 async fn append_async_with_fail_if_events_match_should_detect_conflicting_events_async() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(storage.clone(), FakeClock::new(1000)));
+    let store = Arc::new(MarmosaStore::new(storage.clone(), FakeClock::new(1000)));
 
     let course_id = Uuid::new_v4().to_string();
     create_course(store.clone(), course_id.clone(), 10)

@@ -2,7 +2,7 @@ mod common;
 
 use common::{FakeClock, InMemoryStorage};
 use marmosa::domain::{DomainEvent, EventData, EventRecord, Query, QueryItem, Tag};
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{
     ProjectionDefinition, ProjectionRunner, ProjectionStore, StorageBackendProjectionStore,
 };
@@ -171,7 +171,7 @@ impl ProjectionDefinition for AccountBalanceProjection {
 #[tokio::test]
 async fn rebuild_projection_after_events_added_builds_correct_state() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let account_id = "acc123".to_string();
 
@@ -228,7 +228,7 @@ async fn rebuild_projection_after_events_added_builds_correct_state() {
 #[tokio::test]
 async fn rebuild_projection_with_existing_state_replaces_state() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let account_id = "acc456".to_string();
 
     let initial_events = vec![create_event(
@@ -287,7 +287,7 @@ async fn rebuild_projection_with_existing_state_replaces_state() {
 #[tokio::test]
 async fn rebuild_projection_with_deletion_removes_projection() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
     let account_id = "acc789".to_string();
 
     let events = vec![
@@ -332,7 +332,7 @@ async fn rebuild_projection_with_deletion_removes_projection() {
 #[tokio::test]
 async fn rebuild_projection_with_multiple_instances_builds_all() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let mut account_ids = vec![];
     for i in 0..10 {
@@ -376,7 +376,7 @@ async fn rebuild_projection_with_multiple_instances_builds_all() {
 #[tokio::test]
 async fn rebuild_projection_with_event_ordering_processes_in_order() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let account_id = "acc-ordering".to_string();
 
@@ -439,7 +439,7 @@ async fn rebuild_projection_with_event_ordering_processes_in_order() {
 #[tokio::test]
 async fn rebuild_projection_with_no_events_creates_no_instances() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
@@ -461,7 +461,7 @@ async fn rebuild_projection_with_no_events_creates_no_instances() {
 #[tokio::test]
 async fn rebuild_projection_on_empty_store_writes_checkpoint_file() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let projection_store =
         StorageBackendProjectionStore::new(Arc::clone(&storage), "AccountBalance".to_string());
@@ -480,7 +480,7 @@ async fn rebuild_projection_on_empty_store_writes_checkpoint_file() {
 #[tokio::test]
 async fn rebuild_projection_with_partial_batches_processes_all_events() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let account_id = "acc-batches".to_string();
 
@@ -534,7 +534,7 @@ async fn rebuild_projection_with_partial_batches_processes_all_events() {
 #[tokio::test]
 async fn get_checkpoint_returns_last_processed_position() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), FakeClock::new(1000));
+    let store = MarmosaStore::new(Arc::clone(&storage), FakeClock::new(1000));
 
     let account_id = "acc-cp".to_string();
 

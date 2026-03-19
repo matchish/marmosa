@@ -1,7 +1,7 @@
 mod common;
 
 use common::InMemoryStorage;
-use marmosa::event_store::{EventStore, OpossumStore};
+use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::projections::{ProjectionRunner, StorageBackendProjectionStore, ProjectionDefinition, ProjectionRebuilder};
 use marmosa::domain::{Query, QueryItem, EventRecord, EventData, DomainEvent};
 use std::sync::Arc;
@@ -46,7 +46,7 @@ define_slow_projection!(SlowProjection4, "Slow4", "SlowEvent4");
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_rebuilds_of_different_projections_execute_in_parallel() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), common::FakeClock::new(0));
 
     for _ in 0..6 {
         store.append_async(vec![
@@ -78,7 +78,7 @@ define_slow_projection!(LongRunningProjection, "LongRunning", "LongRunningEvent"
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn duplicate_rebuild_same_projection_executes_sequentially() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = Arc::new(OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0)));
+    let store = Arc::new(MarmosaStore::new(Arc::clone(&storage), common::FakeClock::new(0)));
 
     let mut events = Vec::new();
     for _ in 0..10 {
@@ -120,7 +120,7 @@ async fn duplicate_rebuild_same_projection_executes_sequentially() {
 #[tokio::test]
 async fn rebuild_after_rebuild_same_projection_succeeds() {
     let storage = Arc::new(InMemoryStorage::new());
-    let store = OpossumStore::new(Arc::clone(&storage), common::FakeClock::new(0));
+    let store = MarmosaStore::new(Arc::clone(&storage), common::FakeClock::new(0));
 
     store.append_async(vec![
         EventData { event_id: uuid::Uuid::new_v4().to_string(), event: DomainEvent { event_type: "SlowEvent1".into(), data: "[]".into(), tags: vec![] }, metadata: None },

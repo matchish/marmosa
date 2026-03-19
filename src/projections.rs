@@ -322,7 +322,7 @@ where
     pub async fn process_events(&self, events: &[EventRecord]) -> Result<u64, Error> {
         self.process_events_internal(
             events,
-            None::<&crate::event_store::OpossumStore<S, crate::projections::NoopClock>>,
+            None::<&crate::event_store::MarmosaStore<S, crate::projections::NoopClock>>,
         )
         .await
     }
