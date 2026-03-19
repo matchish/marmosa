@@ -1,3 +1,44 @@
+//! Append-only event store API and default file-backed implementation.
+//!
+//! # Overview
+//!
+//! The event store persists immutable domain events in commit order. Current read models are
+//! derived from these events (for example, with projections), rather than being the source of
+//! truth themselves.
+//!
+//! The core API has two operations:
+//! - [`EventStore::append_async`] for writing one batch atomically.
+//! - [`EventStore::read_async`] for querying events by type/tags via [`crate::domain::Query`].
+//!
+//! # Storage Notes
+//!
+//! The default implementation writes events as JSON files under the `Events` directory and uses
+//! zero-padded file names (for example `0000000000.json`, `0000000001.json`).
+//!
+//! Related modules in this namespace also manage:
+//! - event/tag indices (`indices`),
+//! - store bootstrapping (`initializer`),
+//! - and ledger metadata (`ledger`).
+//!
+//! # Examples
+//!
+//! ```rust
+//! use marmosa::domain::{Query, QueryItem, Tag};
+//!
+//! let query = Query {
+//!     items: vec![QueryItem {
+//!         event_types: vec!["StudentRegisteredEvent".to_string()],
+//!         tags: vec![Tag {
+//!             key: "studentId".to_string(),
+//!             value: "abc123".to_string(),
+//!         }],
+//!     }],
+//! };
+//!
+//! assert_eq!(query.items.len(), 1);
+//! assert_eq!(query.items[0].event_types[0], "StudentRegisteredEvent");
+//! ```
+
 pub mod admin;
 pub mod files;
 pub mod indices;
@@ -21,13 +62,63 @@ use crate::domain::EventRecord;
 use crate::domain::Query;
 use crate::ports::{Clock, Error, StorageBackend};
 
+/// Append/read contract for an event store.
 pub trait EventStore {
+    /// Appends a batch of events.
+    ///
+    /// If `condition` is provided, the append succeeds only when no conflicting events were
+    /// committed after the expected position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::AppendConditionFailed`] when optimistic concurrency fails, or an I/O
+    /// related error when persistence fails.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::domain::{DomainEvent, EventData};
+    /// use marmosa::event_store::EventStore;
+    /// use marmosa::ports::Error;
+    ///
+    /// async fn append_registration<S: EventStore>(store: &S) -> Result<(), Error> {
+    ///     let event = EventData {
+    ///         event_id: "evt-1".to_string(),
+    ///         event: DomainEvent {
+    ///             event_type: "StudentRegisteredEvent".to_string(),
+    ///             data: "{\"studentId\":\"abc123\"}".to_string(),
+    ///             tags: vec![],
+    ///         },
+    ///         metadata: None,
+    ///     };
+    ///
+    ///     store.append_async(vec![event], None).await
+    /// }
+    /// ```
     fn append_async(
         &self,
         events: Vec<EventData>,
         condition: Option<AppendCondition>,
     ) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 
+    /// Reads events matching `query`.
+    ///
+    /// `start_position` is exclusive, `max_count` limits returned events, and `options` can
+    /// influence ordering.
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use marmosa::domain::Query;
+    /// use marmosa::event_store::EventStore;
+    /// use marmosa::ports::Error;
+    ///
+    /// async fn read_recent<S: EventStore>(store: &S) -> Result<(), Error> {
+    ///     let events = store.read_async(Query::all(), Some(10), Some(50), None).await?;
+    ///     assert!(events.len() <= 50);
+    ///     Ok(())
+    /// }
+    /// ```
     fn read_async(
         &self,
         query: Query,
@@ -37,12 +128,14 @@ pub trait EventStore {
     ) -> impl core::future::Future<Output = Result<Vec<EventRecord>, Error>> + Send;
 }
 
+/// Default event store implementation backed by a [`StorageBackend`].
 pub struct MarmosaStore<S, C> {
     storage: S,
     clock: C,
 }
 
 impl<S, C> MarmosaStore<S, C> {
+    /// Creates a new event store using the provided storage backend and clock.
     pub fn new(storage: S, clock: C) -> Self {
         Self { storage, clock }
     }
