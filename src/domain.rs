@@ -31,13 +31,13 @@ pub struct EventRecord {
     pub timestamp: u64,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct QueryItem {
     pub event_types: Vec<String>,
     pub tags: Vec<Tag>,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Query {
     pub items: Vec<QueryItem>,
 }
@@ -76,13 +76,13 @@ impl Query {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct AppendCondition {
     pub fail_if_events_match: Query,
     pub after_sequence_position: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ReadOption(pub u32);
 
 impl ReadOption {

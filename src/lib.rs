@@ -7,5 +7,7 @@ pub mod domain;
 pub mod error;
 pub mod event_store;
 pub mod extensions;
+#[cfg(feature = "in-memory")]
+pub mod in_memory;
 pub mod ports;
 pub mod projections;
