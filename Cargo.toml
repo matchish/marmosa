@@ -15,6 +15,7 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 default = []
 std = ["serde/std", "serde_json/std"]
 in-memory = ["std"]
+testing = ["in-memory", "std"]
 
 [dev-dependencies]
 tempfile = "3.27.0"

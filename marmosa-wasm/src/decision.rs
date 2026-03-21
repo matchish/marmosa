@@ -86,6 +86,82 @@ impl MarmosaEventStore {
         Ok(result.into())
     }
 
+    /// Executes a Decider (the same `{ initialState, evolve, decide, query }` object used in tests)
+    /// against the real event store with automatic retry on concurrency conflicts.
+    ///
+    /// decider: { initialState: () => S, evolve: (state: S, event: EventRecord) => S, decide: (command: C, state: S) => EventData[], query: Query }
+    /// command: C
+    /// maxRetries: number
+    #[wasm_bindgen(js_name = executeDecider)]
+    pub async fn execute_decider(
+        &self,
+        decider_js: JsValue,
+        command_js: JsValue,
+        max_retries: u32,
+    ) -> Result<JsValue, JsValue> {
+        let initial_state_fn: js_sys::Function = js_sys::Reflect::get(&decider_js, &JsValue::from_str("initialState"))
+            .and_then(|v| v.dyn_into())
+            .map_err(|_| JsValue::from_str("Decider must have an initialState function"))?;
+        let evolve_fn: js_sys::Function = js_sys::Reflect::get(&decider_js, &JsValue::from_str("evolve"))
+            .and_then(|v| v.dyn_into())
+            .map_err(|_| JsValue::from_str("Decider must have an evolve function"))?;
+        let decide_fn: js_sys::Function = js_sys::Reflect::get(&decider_js, &JsValue::from_str("decide"))
+            .and_then(|v| v.dyn_into())
+            .map_err(|_| JsValue::from_str("Decider must have a decide function"))?;
+        let query_js = js_sys::Reflect::get(&decider_js, &JsValue::from_str("query"))
+            .map_err(|_| JsValue::from_str("Decider must have a query"))?;
+        let query: Query = serde_wasm_bindgen::from_value(query_js)
+            .map_err(|e| JsValue::from_str(&format!("Failed to deserialize query: {}", e)))?;
+
+        let mut attempt = 0u32;
+        loop {
+            // Build the decision model using existing projection infrastructure
+            let initial_state = initial_state_fn
+                .call0(&JsValue::NULL)
+                .map_err(|e| JsValue::from_str(&format!("initialState() failed: {:?}", e)))?;
+
+            let projection = JsDecisionProjection {
+                initial_state: SendWrapper::new(initial_state),
+                query: query.clone(),
+                apply_fn: SendWrapper::new(evolve_fn.clone()),
+            };
+
+            let events = self
+                .read_async_internal(query.clone(), None, None, None)
+                .await
+                .map_err(|e| JsValue::from_str(&format!("Failed to read events: {:?}", e)))?;
+
+            let model = build_decision_model_from_events(&projection, &events);
+
+            // Call decide(command, state)
+            let new_events_js = decide_fn
+                .call2(&JsValue::NULL, &command_js, &model.state)
+                .map_err(|e| return e)?;
+
+            // Convert JS events to Rust EventData
+            let new_events: Vec<marmosa::domain::EventData> = serde_wasm_bindgen::from_value(new_events_js)
+                .map_err(|e| JsValue::from_str(&format!("Failed to deserialize events from decide(): {}", e)))?;
+
+            // Append with optimistic concurrency
+            match self
+                .append_async_internal(new_events.clone(), Some(model.append_condition))
+                .await
+            {
+                Ok(()) => {
+                    return serde_wasm_bindgen::to_value(&new_events)
+                        .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)));
+                }
+                Err(marmosa::ports::Error::AppendConditionFailed) if attempt < max_retries - 1 => {
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(JsValue::from_str(&format!("Append failed: {:?}", e)));
+                }
+            }
+        }
+    }
+
     /// Executes a decision with retry logic.
     ///
     /// operation: async (store: MarmosaEventStore) => R

@@ -37,6 +37,13 @@ export interface AppendCondition {
   after_sequence_position?: number | null;
 }
 
+export interface Decider<Command, Event, State> {
+  initialState: () => State;
+  evolve: (state: State, event: EventRecord) => State;
+  decide: (command: Command, state: State) => EventData[];
+  query: Query;
+}
+
 export interface DecisionProjection<T> {
   initialState: T;
   query: Query;
@@ -98,6 +105,12 @@ export class MarmosaEventStore {
     maxRetries: number,
     operation: (store: MarmosaEventStore) => Promise<R>
   ): Promise<R>;
+
+  executeDecider<Command, Event, State>(
+    decider: Decider<Command, Event, State>,
+    command: Command,
+    maxRetries: number
+  ): Promise<EventData[]>;
 
   createProjectionStore(name: string): WasmProjectionStore;
   createProjectionRunner<T>(

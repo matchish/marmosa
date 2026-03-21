@@ -92,6 +92,21 @@ pub trait DecisionModelExt {
         P: crate::decision_model::DecisionProjection<State = S> + Send + Sync,
         S: Send + Sync;
 
+    /// Executes a [`Decision`] against the event store with automatic retry on concurrency conflicts.
+    ///
+    /// On each attempt: reads events, folds them into state via the decision's projection,
+    /// calls `process`, and appends the resulting events. If an `AppendConditionFailed` occurs,
+    /// re-reads, re-folds, and re-decides up to `max_retries` times.
+    fn execute_async<D>(
+        &self,
+        decision: D,
+        max_retries: usize,
+    ) -> impl core::future::Future<Output = Result<alloc::vec::Vec<crate::domain::EventData>, Error>> + Send
+    where
+        D: super::Decision + Send + Sync,
+        D::State: Send + Sync,
+        <D::State as crate::decision_model::DecisionProjection>::State: Send + Sync;
+
     /// Builds decision state for multiple homogeneous projections and returns one append condition.
     fn build_decision_model_nary_async<P, S>(
         &self,
@@ -126,6 +141,36 @@ impl<T: EventStore + Send + Sync> DecisionModelExt for T {
                 Err(err) => return Err(err),
             }
             attempt += 1;
+        }
+    }
+
+    async fn execute_async<D>(
+        &self,
+        decision: D,
+        max_retries: usize,
+    ) -> Result<alloc::vec::Vec<crate::domain::EventData>, Error>
+    where
+        D: super::Decision + Send + Sync,
+        D::State: Send + Sync,
+        <D::State as crate::decision_model::DecisionProjection>::State: Send + Sync,
+    {
+        let mut attempt = 0;
+        loop {
+            let projection = decision.state();
+            let model = self.build_decision_model_async(projection).await?;
+            let events = decision
+                .process(&model.state)
+                .map_err(|e| Error::ArgumentError(alloc::format!("{:?}", e)))?;
+            match self
+                .append_async(events.clone(), Some(model.append_condition))
+                .await
+            {
+                Ok(()) => return Ok(events),
+                Err(Error::AppendConditionFailed) if attempt < max_retries - 1 => {
+                    attempt += 1;
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
 

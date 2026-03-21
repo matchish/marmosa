@@ -11,3 +11,5 @@ pub mod extensions;
 pub mod in_memory;
 pub mod ports;
 pub mod projections;
+#[cfg(feature = "testing")]
+pub mod testing;
