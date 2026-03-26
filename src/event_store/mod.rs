@@ -262,6 +262,33 @@ impl<S: StorageBackend + Send + Sync + Clone, C: Clock + Send + Sync> MarmosaSto
         }
 
         let dir_path = "Events";
+
+        // For large batches where positions are already fully resolved (index-based
+        // queries with max_count already applied), read files in parallel.
+        let needs_post_filter = query.items.is_empty();
+        if !needs_post_filter && positions.len() > 10 {
+            let read_futures: Vec<_> = positions
+                .iter()
+                .map(|&pos| {
+                    let storage = &self.storage;
+                    async move {
+                        let file_path = format!("{}/{:010}.json", dir_path, pos);
+                        let data = storage.read_file(&file_path).await?;
+                        serde_json::from_slice::<EventRecord>(&data)
+                            .map_err(|_| Error::IoError)
+                    }
+                })
+                .collect();
+            let read_results = futures::future::join_all(read_futures).await;
+            let mut results = Vec::with_capacity(read_results.len());
+            for result in read_results {
+                results.push(result?);
+            }
+            return Ok(results);
+        }
+
+        // Sequential path: used for small batches or Query::all() which needs
+        // post-filtering and early termination via max_count.
         let mut results = Vec::with_capacity(positions.len());
         for pos in positions {
             let file_path = format!("{}/{:010}.json", dir_path, pos);
