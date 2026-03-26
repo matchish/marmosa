@@ -6,7 +6,7 @@ pub trait EventStoreAdmin {
     fn delete_store(&self) -> impl core::future::Future<Output = Result<(), Error>> + Send;
 }
 
-impl<S: StorageBackend + Send + Sync, C: Send + Sync> EventStoreAdmin for MarmosaStore<S, C> {
+impl<S: StorageBackend + Send + Sync + Clone, C: Send + Sync> EventStoreAdmin for MarmosaStore<S, C> {
     async fn delete_store(&self) -> Result<(), Error> {
         let dirs = ["Events", "Indices", "Projections", ".ledger"];
 

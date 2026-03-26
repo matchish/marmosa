@@ -14,7 +14,7 @@
 //! This keeps event enrichment predictable while allowing read-side indices to evolve over time.
 
 use crate::domain::{EventRecord, Query, QueryItem, Tag};
-use crate::event_store::{EventStore, MarmosaStore};
+use crate::event_store::{EventStore, MarmosaStore, TagIndex};
 use crate::ports::{Clock, Error, StorageBackend};
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -100,7 +100,7 @@ pub trait EventStoreMaintenance {
         F: Fn(&EventRecord) -> Vec<Tag> + Send + Sync;
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintenance
+impl<S: StorageBackend + Send + Sync + Clone, C: Clock + Send + Sync> EventStoreMaintenance
     for MarmosaStore<S, C>
 {
     async fn add_tags<F>(&self, event_type: &str, tag_factory: F) -> Result<AddTagsResult, Error>
@@ -129,20 +129,15 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStoreMaintena
             let new_tags = tag_factory(&record);
             let mut added_for_this_event = 0;
 
+            let tag_index = TagIndex::new(self.storage.clone());
             for tag in new_tags {
                 if !record.event.tags.iter().any(|t| t.key == tag.key) {
                     record.event.tags.push(tag.clone());
                     added_for_this_event += 1;
 
-                    // Add index
-                    let index_dir = alloc::format!(
-                        "Indices/{}/{}",
-                        tag.key.to_lowercase(),
-                        tag.value.to_lowercase()
-                    );
-                    let _ = self.storage.create_dir_all(&index_dir).await;
-                    let index_file = alloc::format!("{}/{:010}.json", index_dir, record.position);
-                    let _ = self.storage.write_file(&index_file, b"{}").await;
+                    let _ = tag_index
+                        .add_position_async("Indices", &tag, record.position)
+                        .await;
                 }
             }
 

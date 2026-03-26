@@ -294,7 +294,7 @@ where
 
 impl<S, TState, P, Store> ProjectionRunner<S, TState, P, Store>
 where
-    S: StorageBackend + Send + Sync,
+    S: StorageBackend + Send + Sync + Clone,
     TState: Serialize + for<'de> Deserialize<'de> + Send + Sync,
     P: ProjectionDefinition<State = TState> + Send + Sync,
     Store: ProjectionStore<TState> + Send + Sync,
@@ -2131,10 +2131,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_projection_runner_processes_events() {
-        let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let store: StorageBackendProjectionStore<alloc::sync::Arc<InMemoryStorage>, CounterState> =
             StorageBackendProjectionStore::new(
-                InMemoryStorage::new(),
+                alloc::sync::Arc::new(InMemoryStorage::new()),
                 "CounterProjection".to_string(),
             );
 
@@ -2182,10 +2182,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_projection_runner_saves_checkpoint() {
-        let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let store: StorageBackendProjectionStore<alloc::sync::Arc<InMemoryStorage>, CounterState> =
             StorageBackendProjectionStore::new(
-                InMemoryStorage::new(),
+                alloc::sync::Arc::new(InMemoryStorage::new()),
                 "CounterProjection".to_string(),
             );
 
@@ -2216,10 +2216,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_projection_runner_skips_already_processed_events() {
-        let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let store: StorageBackendProjectionStore<alloc::sync::Arc<InMemoryStorage>, CounterState> =
             StorageBackendProjectionStore::new(
-                InMemoryStorage::new(),
+                alloc::sync::Arc::new(InMemoryStorage::new()),
                 "CounterProjection".to_string(),
             );
 
@@ -2284,10 +2284,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_projection_runner_filters_by_event_type() {
-        let storage = InMemoryStorage::new();
-        let store: StorageBackendProjectionStore<InMemoryStorage, CounterState> =
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
+        let store: StorageBackendProjectionStore<alloc::sync::Arc<InMemoryStorage>, CounterState> =
             StorageBackendProjectionStore::new(
-                InMemoryStorage::new(),
+                alloc::sync::Arc::new(InMemoryStorage::new()),
                 "CounterProjection".to_string(),
             );
 

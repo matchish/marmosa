@@ -75,7 +75,7 @@ impl ProjectionDefinition for JsProjectionDefinition {
 
 // We need an enum for projection stores since they can be backed by different storage
 enum ProjectionStoreKind {
-    InMemory(StorageBackendProjectionStore<InMemoryStorage, JsProjectionState>),
+    InMemory(StorageBackendProjectionStore<std::sync::Arc<InMemoryStorage>, JsProjectionState>),
     FileSystem(StorageBackendProjectionStore<NodeFileSystemStorage, JsProjectionState>),
 }
 
@@ -182,10 +182,10 @@ impl WasmProjectionStore {
 enum RunnerKind {
     InMemory(
         ProjectionRunner<
-            InMemoryStorage,
+            std::sync::Arc<InMemoryStorage>,
             JsProjectionState,
             JsProjectionDefinition,
-            StorageBackendProjectionStore<InMemoryStorage, JsProjectionState>,
+            StorageBackendProjectionStore<std::sync::Arc<InMemoryStorage>, JsProjectionState>,
         >,
     ),
     FileSystem(
@@ -258,7 +258,7 @@ async fn runner_rebuild_with_store<S, Store>(
     event_store: &MarmosaEventStore,
 ) -> Result<u64, Error>
 where
-    S: marmosa::ports::StorageBackend + Send + Sync,
+    S: marmosa::ports::StorageBackend + Send + Sync + Clone,
     Store: ProjectionStore<JsProjectionState> + Send + Sync,
 {
     // Read all events and process them through the runner
@@ -310,7 +310,7 @@ impl MarmosaEventStore {
         match self.inner_storage_kind() {
             crate::StoreKind::InMemory(_) => WasmProjectionStore {
                 inner: ProjectionStoreKind::InMemory(StorageBackendProjectionStore::new(
-                    InMemoryStorage::new(),
+                    std::sync::Arc::new(InMemoryStorage::new()),
                     name.to_string(),
                 )),
             },
@@ -339,7 +339,7 @@ impl MarmosaEventStore {
             ProjectionStoreKind::InMemory(proj_store) => {
                 WasmProjectionRunner {
                     inner: RunnerKind::InMemory(ProjectionRunner::new(
-                        InMemoryStorage::new(),
+                        std::sync::Arc::new(InMemoryStorage::new()),
                         definition,
                         proj_store,
                     )),

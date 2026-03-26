@@ -59,6 +59,7 @@ fn sleep_ms(ms: i32) -> SendWrapper<impl core::future::Future<Output = ()>> {
     })
 }
 
+#[derive(Clone)]
 pub struct NodeFileSystemStorage {
     base_path: String,
     stale_lock_threshold_ms: u64,

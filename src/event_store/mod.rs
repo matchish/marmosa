@@ -141,19 +141,12 @@ impl<S, C> MarmosaStore<S, C> {
     }
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> MarmosaStore<S, C> {
-    async fn read_internal(
-        &self,
-        query: Query,
-        start_position: Option<u64>,
-        max_count: Option<usize>,
-        options: Option<Vec<crate::domain::ReadOption>>,
-    ) -> Result<Vec<EventRecord>, Error> {
+impl<S: StorageBackend + Send + Sync + Clone, C: Clock + Send + Sync> MarmosaStore<S, C> {
+    /// Returns all event positions by scanning the Events directory.
+    async fn get_all_positions(&self, start_position: Option<u64>) -> Result<Vec<u64>, Error> {
         let dir_path = "Events";
-        let mut results = Vec::new();
-
         let sequence_files = self.storage.read_dir(dir_path).await.unwrap_or_default();
-        let mut available_positions: Vec<u64> = sequence_files
+        let mut positions: Vec<u64> = sequence_files
             .iter()
             .filter_map(|f| {
                 f.split('/')
@@ -163,25 +156,115 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> MarmosaStore<S, C>
                     .ok()
             })
             .collect();
-        available_positions.sort_unstable();
+        positions.sort_unstable();
 
-        let start = start_position.map(|p| p + 1).unwrap_or(0); // Exclusive bound
+        let start = start_position.map(|p| p + 1).unwrap_or(0);
+        positions.retain(|&p| p >= start);
+        Ok(positions)
+    }
+
+    /// Resolves a single QueryItem to a set of matching positions using indices.
+    async fn get_positions_for_query_item(
+        &self,
+        index_manager: &IndexManager<S>,
+        item: &crate::domain::QueryItem,
+    ) -> Result<alloc::collections::BTreeSet<u64>, Error> {
+        let mut event_type_positions: Option<alloc::collections::BTreeSet<u64>> = None;
+        let mut tag_positions: Option<alloc::collections::BTreeSet<u64>> = None;
+
+        // Event types: OR within (union)
+        if !item.event_types.is_empty() {
+            let type_strs: Vec<&str> = item.event_types.iter().map(|s| s.as_str()).collect();
+            let positions = index_manager
+                .get_positions_by_event_types_async("Indices", &type_strs)
+                .await?;
+            event_type_positions = Some(positions.into_iter().collect());
+        }
+
+        // Tags: AND within (intersection)
+        if !item.tags.is_empty() {
+            let mut tag_set: Option<alloc::collections::BTreeSet<u64>> = None;
+            for tag in &item.tags {
+                let positions = index_manager
+                    .get_positions_by_tag_async("Indices", tag)
+                    .await?;
+                let pos_set: alloc::collections::BTreeSet<u64> = positions.into_iter().collect();
+                tag_set = Some(match tag_set {
+                    None => pos_set,
+                    Some(existing) => existing.intersection(&pos_set).copied().collect(),
+                });
+            }
+            tag_positions = tag_set;
+        }
+
+        // Combine: AND between event_types and tags
+        match (event_type_positions, tag_positions) {
+            (Some(et), Some(tg)) => Ok(et.intersection(&tg).copied().collect()),
+            (Some(et), None) => Ok(et),
+            (None, Some(tg)) => Ok(tg),
+            (None, None) => Ok(alloc::collections::BTreeSet::new()),
+        }
+    }
+
+    /// Resolves a Query to a sorted list of matching positions.
+    async fn get_positions_for_query(
+        &self,
+        query: &Query,
+        start_position: Option<u64>,
+    ) -> Result<Vec<u64>, Error> {
+        if query.items.is_empty() {
+            return self.get_all_positions(start_position).await;
+        }
+
+        let index_manager = IndexManager::new(self.storage.clone());
+        let mut all_positions = alloc::collections::BTreeSet::<u64>::new();
+
+        for item in &query.items {
+            let item_positions = self
+                .get_positions_for_query_item(&index_manager, item)
+                .await?;
+            for pos in item_positions {
+                all_positions.insert(pos);
+            }
+        }
+
+        let start = start_position.map(|p| p + 1).unwrap_or(0);
+        let result: Vec<u64> = all_positions.into_iter().filter(|&p| p >= start).collect();
+        Ok(result)
+    }
+
+    async fn read_internal(
+        &self,
+        query: Query,
+        start_position: Option<u64>,
+        max_count: Option<usize>,
+        options: Option<Vec<crate::domain::ReadOption>>,
+    ) -> Result<Vec<EventRecord>, Error> {
+        let mut positions = self.get_positions_for_query(&query, start_position).await?;
+
+        if positions.is_empty() {
+            return Ok(Vec::new());
+        }
 
         let descending_opt = crate::domain::ReadOption::DESCENDING;
         let is_descending = options
             .as_ref()
             .is_some_and(|opts| opts.contains(&descending_opt));
-
-        let mut filtered_positions: Vec<u64> = available_positions
-            .into_iter()
-            .filter(|&p| p >= start)
-            .collect();
         if is_descending {
-            filtered_positions.reverse();
+            positions.reverse();
         }
 
-        for current_pos in filtered_positions {
-            let file_path = format!("{}/{:010}.json", dir_path, current_pos);
+        // For index-resolved queries, apply max_count before reading files
+        if !query.items.is_empty() {
+            if let Some(max) = max_count {
+                positions.truncate(max);
+            }
+        }
+
+        let dir_path = "Events";
+        let mut results = Vec::with_capacity(positions.len());
+        for pos in positions {
+            let file_path = format!("{}/{:010}.json", dir_path, pos);
             let data = self.storage.read_file(&file_path).await?;
             let record =
                 serde_json::from_slice::<EventRecord>(&data).map_err(|_| Error::IoError)?;
@@ -200,7 +283,9 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> MarmosaStore<S, C>
     }
 }
 
-impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for MarmosaStore<S, C> {
+impl<S: StorageBackend + Send + Sync + Clone, C: Clock + Send + Sync> EventStore
+    for MarmosaStore<S, C>
+{
     async fn append_async(
         &self,
         events: Vec<EventData>,
@@ -228,18 +313,21 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Mar
                 .unwrap_or(0);
 
             if let Some(cond) = condition {
-                // Read all current events to check against condition
                 let current_events = self
-                    .read_internal(Query::all(), cond.after_sequence_position, None, None)
+                    .read_internal(
+                        cond.fail_if_events_match,
+                        cond.after_sequence_position,
+                        None,
+                        None,
+                    )
                     .await?;
-                for evt in current_events {
-                    if cond.fail_if_events_match.matches(&evt) {
-                        return Err(Error::AppendConditionFailed);
-                    }
+                if !current_events.is_empty() {
+                    return Err(Error::AppendConditionFailed);
                 }
             }
 
             let timestamp = self.clock.now_millis();
+            let index_manager = IndexManager::new(self.storage.clone());
 
             for event in events {
                 let record = EventRecord {
@@ -250,10 +338,14 @@ impl<S: StorageBackend + Send + Sync, C: Clock + Send + Sync> EventStore for Mar
                     timestamp,
                 };
 
-                let vec = serde_json::to_vec(&record).map_err(|_| Error::IoError)?; // Map error appropriately
+                let vec = serde_json::to_vec(&record).map_err(|_| Error::IoError)?;
 
                 let file_path = format!("{}/{:010}.json", dir_path, sequence);
                 self.storage.write_file(&file_path, &vec).await?;
+
+                index_manager
+                    .add_event_to_indices_async("Indices", &record)
+                    .await?;
 
                 sequence += 1;
             }
@@ -286,7 +378,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_single_event_to_new_stream() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -306,7 +398,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_and_read_stream() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -332,7 +424,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_condition_stream_does_not_exist() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -372,7 +464,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_condition_expected_position() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -429,7 +521,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_with_multiple_events_assigns_sequential_positions() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -514,7 +606,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_append_multiple_sequential_appends_maintains_continuous_sequence() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -551,7 +643,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_async_with_query_all_returns_all_events() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -583,7 +675,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_async_with_single_event_type_returns_matching_events() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -620,7 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_async_with_single_tag_returns_matching_events() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 
@@ -664,7 +756,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_async_with_from_position_in_middle_returns_only_events_after_position() {
-        let storage = InMemoryStorage::new();
+        let storage = alloc::sync::Arc::new(InMemoryStorage::new());
         let clock = FakeClock::new(1696000000);
         let store = MarmosaStore::new(storage, clock);
 

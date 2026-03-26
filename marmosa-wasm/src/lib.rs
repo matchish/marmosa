@@ -4,6 +4,8 @@ pub mod decision;
 pub mod projections;
 pub mod storage;
 
+use std::sync::Arc;
+
 use marmosa::domain::{AppendCondition, EventData, EventRecord, Query};
 use marmosa::event_store::{EventStore, MarmosaStore};
 use marmosa::extensions::EventStoreExt;
@@ -20,7 +22,7 @@ impl Clock for JsClock {
 }
 
 enum StoreKind {
-    InMemory(MarmosaStore<InMemoryStorage, JsClock>),
+    InMemory(MarmosaStore<Arc<InMemoryStorage>, JsClock>),
     FileSystem(MarmosaStore<NodeFileSystemStorage, JsClock>),
 }
 
@@ -35,7 +37,10 @@ impl MarmosaEventStore {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
         Self {
-            inner: StoreKind::InMemory(MarmosaStore::new(InMemoryStorage::new(), JsClock)),
+            inner: StoreKind::InMemory(MarmosaStore::new(
+                Arc::new(InMemoryStorage::new()),
+                JsClock,
+            )),
             base_path: None,
         }
     }

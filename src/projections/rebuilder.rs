@@ -35,7 +35,7 @@ pub trait RebuildTask<E: EventStore>: Send + Sync {
 
 impl<S, TState, P, Store, E> RebuildTask<E> for ProjectionRunner<S, TState, P, Store>
 where
-    S: StorageBackend + Send + Sync,
+    S: StorageBackend + Send + Sync + Clone,
     TState: serde::Serialize + for<'de> serde::Deserialize<'de> + Send + Sync + 'static,
     P: ProjectionDefinition<State = TState> + Send + Sync,
     Store: ProjectionStore<TState> + Send + Sync,
