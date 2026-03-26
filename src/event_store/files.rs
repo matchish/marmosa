@@ -23,7 +23,7 @@ impl<S: crate::ports::StorageBackend> EventFileManager<S> {
 
     pub async fn event_file_exists(&self, events_path: &str, position: i64) -> bool {
         if let Ok(path) = self.get_event_file_path(events_path, position) {
-            self.storage.read_file(&path).await.is_ok()
+            self.storage.file_exists(&path).await
         } else {
             false
         }
@@ -44,7 +44,7 @@ impl<S: crate::ports::StorageBackend> EventFileManager<S> {
 
         let path = self.get_event_file_path(events_path, event.position as i64)?;
 
-        if !allow_overwrite && self.storage.read_file(&path).await.is_ok() {
+        if !allow_overwrite && self.storage.file_exists(&path).await {
             return Ok(()); // idempotent write skip
         }
 

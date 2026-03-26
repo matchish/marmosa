@@ -74,7 +74,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> TagIndex<S> {
 
     pub async fn index_exists(&self, root_path: &str, tag: &crate::domain::Tag) -> bool {
         let file_path = self.get_file_path(root_path, tag);
-        self.storage.read_file(&file_path).await.is_ok()
+        self.storage.file_exists(&file_path).await
     }
 }
 
@@ -153,7 +153,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> EventTypeIndex<S> {
 
     pub async fn index_exists(&self, root_path: &str, event_type: &str) -> bool {
         let file_path = self.get_file_path(root_path, event_type);
-        self.storage.read_file(&file_path).await.is_ok()
+        self.storage.file_exists(&file_path).await
     }
 }
 

@@ -19,6 +19,7 @@ pub trait StorageBackend {
     fn delete_file(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
     fn delete_dir_all(&self, path: &str) -> impl Future<Output = Result<(), Error>> + Send;
     fn read_dir(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Error>> + Send;
+    fn file_exists(&self, path: &str) -> impl Future<Output = bool> + Send;
 
     /// Acquires an exclusive lock for the given stream.
     fn acquire_stream_lock(
@@ -59,6 +60,10 @@ impl<T: ?Sized + StorageBackend + Send + Sync> StorageBackend for alloc::sync::A
 
     fn read_dir(&self, path: &str) -> impl Future<Output = Result<Vec<String>, Error>> + Send {
         (**self).read_dir(path)
+    }
+
+    fn file_exists(&self, path: &str) -> impl Future<Output = bool> + Send {
+        (**self).file_exists(path)
     }
 
     fn acquire_stream_lock(
@@ -195,6 +200,10 @@ pub mod tests {
                 }
             }
             Ok(result)
+        }
+
+        async fn file_exists(&self, path: &str) -> bool {
+            self.files.lock().unwrap().contains_key(path)
         }
 
         async fn acquire_stream_lock(&self, stream_id: &str) -> Result<(), Error> {

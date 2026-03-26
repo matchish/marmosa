@@ -115,6 +115,10 @@ impl StorageBackend for InMemoryStorage {
         Ok(result)
     }
 
+    async fn file_exists(&self, path: &str) -> bool {
+        self.files.lock().unwrap().contains_key(path)
+    }
+
     async fn acquire_stream_lock(&self, stream_id: &str) -> Result<(), Error> {
         loop {
             {

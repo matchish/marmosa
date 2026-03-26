@@ -171,6 +171,13 @@ impl StorageBackend for NodeFileSystemStorage {
         })
     }
 
+    fn file_exists(&self, path: &str) -> impl core::future::Future<Output = bool> + Send {
+        let full = self.resolve(path);
+        SendWrapper::new(async move {
+            node_read_file(&full).await.is_ok()
+        })
+    }
+
     fn acquire_stream_lock(
         &self,
         stream_id: &str,

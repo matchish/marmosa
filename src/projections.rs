@@ -976,7 +976,7 @@ impl<S: StorageBackend + Send + Sync> ProjectionTagIndex<S> {
         let lock_key = self.get_tag_lock_key(root_path, tag);
 
         // Return early if file doesn't exist to save locking
-        if let Err(Error::NotFound) = self.storage.read_file(&index_path).await {
+        if !self.storage.file_exists(&index_path).await {
             return Ok(());
         }
 
@@ -1324,7 +1324,7 @@ impl<S: crate::ports::StorageBackend + Send + Sync> ProjectionMetadataIndex<S> {
         let index_path = self.get_index_path(root_path);
         let lock_key = self.get_lock_key(root_path);
 
-        if let Err(crate::ports::Error::NotFound) = self.storage.read_file(&index_path).await {
+        if !self.storage.file_exists(&index_path).await {
             return Ok(());
         }
 
