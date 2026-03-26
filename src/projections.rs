@@ -269,6 +269,13 @@ pub trait ProjectionStore<TState> {
 
     fn delete(&self, key: &str) -> impl core::future::Future<Output = Result<(), Error>> + Send;
     fn clear(&self) -> impl core::future::Future<Output = Result<(), Error>> + Send;
+
+    fn set_batch_mode(&self, _enabled: bool) {}
+    fn rebuild_metadata_index(
+        &self,
+    ) -> impl core::future::Future<Output = Result<(), Error>> + Send {
+        async { Ok(()) }
+    }
 }
 
 /// Checkpoint for tracking projection progress
@@ -358,11 +365,17 @@ where
             self.store.clear().await?;
             self.save_checkpoint(0, 0).await?;
 
+            self.store.set_batch_mode(true);
             let events = event_store
                 .read_async(crate::domain::Query::all(), None, None, None)
                 .await?;
-            self.process_events_with_store(&events, Some(event_store))
-                .await
+            let result = self
+                .process_events_with_store(&events, Some(event_store))
+                .await;
+            self.store.set_batch_mode(false);
+            self.store.rebuild_metadata_index().await?;
+
+            result
         }.await;
 
         let _ = self.storage.release_stream_lock(&lock_id).await;
@@ -466,10 +479,16 @@ pub struct StorageBackendProjectionStore<
     projection_name: alloc::string::String,
     tag_provider: Option<TTagProvider>,
     clock: Option<C>,
+    skip_index_writes: core::sync::atomic::AtomicBool,
     _marker: core::marker::PhantomData<TState>,
 }
 
-impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {}
+impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {
+    pub fn set_batch_mode(&self, enabled: bool) {
+        self.skip_index_writes
+            .store(enabled, core::sync::atomic::Ordering::Relaxed);
+    }
+}
 
 impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {
     fn get_projection_path(&self) -> String {
@@ -478,6 +497,46 @@ impl<S, TState, P, C> StorageBackendProjectionStore<S, TState, P, C> {
 
     fn get_file_path(&self, key: &str) -> String {
         alloc::format!("Projections/{}/{}.json", self.projection_name, key)
+    }
+}
+
+impl<
+    S: StorageBackend + Send + Sync,
+    TState: for<'de> Deserialize<'de>,
+    P,
+    C,
+> StorageBackendProjectionStore<S, TState, P, C> {
+    pub async fn rebuild_metadata_index(&self) -> Result<(), Error> {
+        let dir_path = self.get_projection_path();
+        let files = self.storage.read_dir(&dir_path).await.unwrap_or_default();
+
+        let mut index: alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata> =
+            alloc::collections::BTreeMap::new();
+
+        for file_path in files {
+            if !file_path.ends_with(".json") {
+                continue;
+            }
+            // Extract key from filename (last segment without .json)
+            let key = match file_path.rsplit('/').next() {
+                Some(name) => name.trim_end_matches(".json"),
+                None => continue,
+            };
+            if let Ok(data) = self.storage.read_file(&file_path).await {
+                if let Ok(wrapper) = serde_json::from_slice::<ProjectionWrapper<TState>>(&data) {
+                    index.insert(alloc::string::String::from(key), wrapper.metadata);
+                }
+            }
+        }
+
+        let metadata_dir = alloc::format!("{}/Metadata", dir_path);
+        let _ = self.storage.create_dir_all(&metadata_dir).await;
+        let metadata_index_path = alloc::format!("{}/index.json", metadata_dir);
+
+        if let Ok(data) = serde_json::to_vec(&index) {
+            self.storage.write_file(&metadata_index_path, &data).await?;
+        }
+        Ok(())
     }
 }
 
@@ -492,6 +551,7 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
             projection_name,
             tag_provider: None,
             clock,
+            skip_index_writes: core::sync::atomic::AtomicBool::new(false),
             _marker: core::marker::PhantomData,
         }
     }
@@ -502,6 +562,7 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
             projection_name,
             tag_provider: None,
             clock: None,
+            skip_index_writes: core::sync::atomic::AtomicBool::new(false),
             _marker: core::marker::PhantomData,
         }
     }
@@ -516,6 +577,7 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
             projection_name,
             tag_provider: Some(tag_provider),
             clock: None,
+            skip_index_writes: core::sync::atomic::AtomicBool::new(false),
             _marker: core::marker::PhantomData,
         }
     }
@@ -531,6 +593,7 @@ impl<S, TState> StorageBackendProjectionStore<S, TState, NoopProjectionTagProvid
             projection_name,
             tag_provider: Some(tag_provider),
             clock,
+            skip_index_writes: core::sync::atomic::AtomicBool::new(false),
             _marker: core::marker::PhantomData,
         }
     }
@@ -684,9 +747,6 @@ impl<
         let dir_path = self.get_projection_path();
         let _ = self.storage.create_dir_all(&dir_path).await;
 
-        let metadata_dir = alloc::format!("{}/Metadata", self.get_projection_path());
-        let _ = self.storage.create_dir_all(&metadata_dir).await;
-
         let path = self.get_file_path(key);
         let now = if let Some(clock) = &self.clock {
             crate::ports::Clock::now_millis(clock)
@@ -694,28 +754,66 @@ impl<
             0
         };
 
-        let metadata_index_path = alloc::format!("{}/index.json", metadata_dir);
-        let mut metadata_index: alloc::collections::BTreeMap<
-            alloc::string::String,
-            ProjectionMetadata,
-        > = if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
-            serde_json::from_slice(&data).unwrap_or_default()
-        } else {
-            alloc::collections::BTreeMap::new()
-        };
+        let batch_mode = self
+            .skip_index_writes
+            .load(core::sync::atomic::Ordering::Relaxed);
 
-        let mut current_metadata = if let Some(meta) = metadata_index.get(key) {
-            let mut m = meta.clone();
-            m.version += 1;
-            m.last_updated_at = now;
-            m
+        // Read previous metadata: from individual file in batch mode, from index.json otherwise
+        let (mut current_metadata, metadata_index_state) = if batch_mode {
+            let meta = match self.storage.read_file(&path).await {
+                Ok(data) => {
+                    if let Ok(wrapper) =
+                        serde_json::from_slice::<ProjectionWrapper<TState>>(&data)
+                    {
+                        let mut m = wrapper.metadata;
+                        m.version += 1;
+                        m.last_updated_at = now;
+                        m
+                    } else {
+                        ProjectionMetadata {
+                            created_at: now,
+                            last_updated_at: now,
+                            version: 1,
+                            size_in_bytes: 0,
+                        }
+                    }
+                }
+                Err(_) => ProjectionMetadata {
+                    created_at: now,
+                    last_updated_at: now,
+                    version: 1,
+                    size_in_bytes: 0,
+                },
+            };
+            (meta, None)
         } else {
-            ProjectionMetadata {
-                created_at: now,
-                last_updated_at: now,
-                version: 1,
-                size_in_bytes: 0,
-            }
+            let metadata_dir = alloc::format!("{}/Metadata", self.get_projection_path());
+            let _ = self.storage.create_dir_all(&metadata_dir).await;
+            let metadata_index_path = alloc::format!("{}/index.json", metadata_dir);
+
+            let metadata_index: alloc::collections::BTreeMap<
+                alloc::string::String,
+                ProjectionMetadata,
+            > = if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
+                serde_json::from_slice(&data).unwrap_or_default()
+            } else {
+                alloc::collections::BTreeMap::new()
+            };
+
+            let meta = if let Some(meta) = metadata_index.get(key) {
+                let mut m = meta.clone();
+                m.version += 1;
+                m.last_updated_at = now;
+                m
+            } else {
+                ProjectionMetadata {
+                    created_at: now,
+                    last_updated_at: now,
+                    version: 1,
+                    size_in_bytes: 0,
+                }
+            };
+            (meta, Some((metadata_index_path, metadata_index)))
         };
 
         let wrapper = ProjectionWrapper {
@@ -728,13 +826,14 @@ impl<
 
         self.storage.write_file(&path, data.as_slice()).await?;
 
-        metadata_index.insert(alloc::string::String::from(key), current_metadata.clone());
-
-        if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
-            let _ = self
-                .storage
-                .write_file(&metadata_index_path, index_data.as_slice())
-                .await;
+        if let Some((metadata_index_path, mut metadata_index)) = metadata_index_state {
+            metadata_index.insert(alloc::string::String::from(key), current_metadata.clone());
+            if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
+                let _ = self
+                    .storage
+                    .write_file(&metadata_index_path, index_data.as_slice())
+                    .await;
+            }
         }
 
         if let Some(provider) = &self.tag_provider {
@@ -771,19 +870,24 @@ impl<
             }
         }
 
-        let metadata_index_path =
-            alloc::format!("{}/Metadata/index.json", self.get_projection_path());
-        if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
-            if let Ok(mut metadata_index) = serde_json::from_slice::<
-                alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>,
-            >(&data)
-            {
-                if metadata_index.remove(key).is_some() {
-                    if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
-                        let _ = self
-                            .storage
-                            .write_file(&metadata_index_path, index_data.as_slice())
-                            .await;
+        if !self
+            .skip_index_writes
+            .load(core::sync::atomic::Ordering::Relaxed)
+        {
+            let metadata_index_path =
+                alloc::format!("{}/Metadata/index.json", self.get_projection_path());
+            if let Ok(data) = self.storage.read_file(&metadata_index_path).await {
+                if let Ok(mut metadata_index) = serde_json::from_slice::<
+                    alloc::collections::BTreeMap<alloc::string::String, ProjectionMetadata>,
+                >(&data)
+                {
+                    if metadata_index.remove(key).is_some() {
+                        if let Ok(index_data) = serde_json::to_vec(&metadata_index) {
+                            let _ = self
+                                .storage
+                                .write_file(&metadata_index_path, index_data.as_slice())
+                                .await;
+                        }
                     }
                 }
             }
@@ -795,6 +899,15 @@ impl<
             Err(Error::NotFound) => Ok(()),
             Err(e) => Err(e),
         }
+    }
+
+    fn set_batch_mode(&self, enabled: bool) {
+        self.skip_index_writes
+            .store(enabled, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    async fn rebuild_metadata_index(&self) -> Result<(), Error> {
+        StorageBackendProjectionStore::rebuild_metadata_index(self).await
     }
 }
 
